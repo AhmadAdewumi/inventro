@@ -37,7 +37,6 @@ class OrderItemInline(admin.TabularInline):
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     inlines = [OrderItemInline]
-    # Just use 'status' directly instead of 'status_badge'
     list_display = ['id', 'cashier', 'total_amount', 'status', 'created_at']
     list_filter = ['status', 'created_at']
 
