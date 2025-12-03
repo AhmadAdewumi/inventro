@@ -66,13 +66,13 @@ class PurchaseOrderAdmin(admin.ModelAdmin):
     list_filter = ['status']
     actions = ['mark_as_received']
 
-    @admin.action(description='Receive Stock (Finalize PO)')
+    @admin.action(description='Receive Stock (Finalize Purchase Order)')
     def mark_as_received(self, request, queryset):
         for purchase_order in queryset:
             if purchase_order.status == 'received':
                 continue
             try:
                 receive_purchase_order(request.user, purchase_order.id)
-                self.message_user(request, f"Received PO #{purchase_order.id}")
+                self.message_user(request, f"Received Purchase Order #{purchase_order.id}")
             except Exception as e:
                 self.message_user(request, f"Error: {str(e)}", level='error')
