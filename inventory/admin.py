@@ -31,7 +31,7 @@ class ProductVariantAdmin(admin.ModelAdmin):
 #-- Orders
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
-    extra = 0
+    extra = 1
     readonly_fields = ['unit_price']
 
 @admin.register(Order)
@@ -68,11 +68,14 @@ class PurchaseOrderAdmin(admin.ModelAdmin):
 
     @admin.action(description='Receive Stock (Finalize Purchase Order)')
     def mark_as_received(self, request, queryset):
-        for purchase_order in queryset:
+        #-- A QuerySet represents a collection of objects from the database.  (Django docs)
+        # It can have zero, one or many filters. Filters narrow down the query results based on the given parameters.
+        #  In SQL terms, a QuerySet equates to a SELECT statement, and a filter is a limiting clause such as WHERE or LIMIT.
+        for purchase_order in queryset: #-- grabs each selected purchase order
             if purchase_order.status == 'received':
                 continue
             try:
                 receive_purchase_order(request.user, purchase_order.id)
                 self.message_user(request, f"Received Purchase Order #{purchase_order.id}")
             except Exception as e:
-                self.message_user(request, f"Error: {str(e)}", level='error')
+                self.message_user(request, f"Error: {str(e)}", level='error') #-- message user is used to show feedback messages at the top of the admin page
