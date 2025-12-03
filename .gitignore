@@ -136,3 +136,5 @@ db.sqlite3
 pycache/
 *.pyc
 staticfiles/
+
+.idea

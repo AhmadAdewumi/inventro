@@ -43,7 +43,6 @@ class PromotionAdmin(admin.ModelAdmin):
     list_filter = ['is_active']
     help_text = "Manage automatic pricing rules here."
 
-# 1. Suppliers
 @admin.register(Supplier)
 class SupplierAdmin(admin.ModelAdmin):
     list_display = ['name', 'contact_person', 'email']
@@ -54,7 +53,7 @@ class PurchaseOrderItemInline(admin.TabularInline):
     model = PurchaseOrderItem
     extra = 1
 
-# 3. Purchase Orders (The Control Center)
+# 3. Purchase Orders
 @admin.register(PurchaseOrder)
 class PurchaseOrderAdmin(admin.ModelAdmin):
     inlines = [PurchaseOrderItemInline]
@@ -63,7 +62,7 @@ class PurchaseOrderAdmin(admin.ModelAdmin):
     actions = ['mark_as_received'] # Register the custom button
 
     def status_badge(self, obj):
-        # Color-coded status badges for better UX
+        # Color-coded status badges
         colors = {
             'draft': 'gray',
             'ordered': 'blue',
@@ -77,23 +76,22 @@ class PurchaseOrderAdmin(admin.ModelAdmin):
         )
     status_badge.short_description = 'Status'
 
-    # THE CUSTOM ACTION
     @admin.action(description='Receive Stock (Finalize Purchase Order)')
     def mark_as_received(self, request, queryset):
         """
         Calls the service layer for selected POs.
         """
-        for po in queryset:
-            if po.status == 'received':
-                self.message_user(request, f"PO #{po.id} is already received.", level='warning')
+        for purchase_order in queryset:
+            if purchase_order.status == 'received':
+                self.message_user(request, f"PO #{purchase_order.id} is already received.", level='warning')
                 continue
                 
             try:
                 # Call the Service Logic we wrote!
-                receive_purchase_order(request.user, po.id)
-                self.message_user(request, f"Successfully received stock for PO #{po.id}.")
+                receive_purchase_order(request.user, purchase_order.id)
+                self.message_user(request, f"Successfully received stock for PO #{purchase_order.id}.")
             except Exception as e:
-                self.message_user(request, f"Error on PO #{po.id}: {str(e)}", level='error')
+                self.message_user(request, f"Error on PO #{purchase_order.id}: {str(e)}", level='error')
 
 
 @admin.register(ProductVariant)
