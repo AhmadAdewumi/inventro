@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple POS</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .scanner-box { 
+            width: 100%; padding: 15px; font-size: 20px; 
+            border: 2px solid #333; border-radius: 5px; margin-bottom: 20px;
+        }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { text-align: left; padding: 10px; border-bottom: 1px solid #ddd; }
+        .total-section { text-align: right; font-size: 24px; font-weight: bold; }
+        .btn { padding: 10px 20px; font-size: 18px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 5px; }
+        .error { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Store POS</h1>
+        <div>Cashier: <strong>Ahmad</strong></div>
+    </div>
+
+    <!-- The "Scanner" Input -->
+    <input type="text" id="barcodeInput" class="scanner-box" placeholder="Scan Barcode here..." autofocus>
+    <div id="errorMsg" class="error"></div>
+
+    <!-- The Cart -->
+    <table>
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th>Price</th>
+                <th>Qty</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody id="cartBody">
+            <!-- Items go here -->
+        </tbody>
+    </table>
+
+    <div class="total-section">
+        Total: $<span id="grandTotal">0.00</span>
+    </div>
+
+    <br>
+    <div style="text-align: right;">
+        <button class="btn" onclick="checkout()">Pay (Cash)</button>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000/api";
+        // Basic Auth Credentials (admin:admin123 base64 encoded)
+        // Replace 'admin:admin123' with your actual username:password
+        const AUTH_HEADER = "Basic " + btoa("ahmad:adewumi123"); 
+
+        let cart = []; // Stores { barcode, name, price, qty }
+
+        const input = document.getElementById('barcodeInput');
+        const errorDiv = document.getElementById('errorMsg');
+
+        // Listen for "Enter" key on the input box (Scanner behavior)
+        input.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+                const barcode = input.value.trim();
+                if(barcode) await scanItem(barcode);
+                input.value = ''; // Clear for next scan
+            }
+        });
+
+        async function scanItem(barcode) {
+            errorDiv.textContent = "";
+            try {
+                // 1. Call your Backend
+                const res = await fetch(`${API_URL}/scan/${barcode}/`, {
+                    headers: { 'Authorization': AUTH_HEADER }
+                });
+
+                if (!res.ok) throw new Error("Product not found");
+                const product = await res.json();
+
+                // 2. Add to Cart Logic
+                const existing = cart.find(item => item.barcode === product.barcode);
+                if (existing) {
+                    existing.qty += 1;
+                } else {
+                    cart.push({
+                        barcode: product.barcode,
+                        name: product.product_name + " " + product.name_suffix,
+                        price: parseFloat(product.price),
+                        qty: 1
+                    });
+                }
+                renderCart();
+
+            } catch (err) {
+                errorDiv.textContent = err.message;
+            }
+        }
+
+        function renderCart() {
+            const tbody = document.getElementById('cartBody');
+            tbody.innerHTML = '';
+            let total = 0;
+
+            cart.forEach(item => {
+                const lineTotal = item.price * item.qty;
+                total += lineTotal;
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${item.name}</td>
+                        <td>$${item.price.toFixed(2)}</td>
+                        <td>${item.qty}</td>
+                        <td>$${lineTotal.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('grandTotal').innerText = total.toFixed(2);
+        }
+
+        async function checkout() {
+            if (cart.length === 0) return alert("Cart is empty!");
+
+            const payload = {
+                payment_method: "cash",
+                items: cart.map(i => ({ barcode: i.barcode, quantity: i.qty }))
+            };
+
+            try {
+                const res = await fetch(`${API_URL}/purchase/`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': AUTH_HEADER
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                
+                if (res.ok) {
+                    alert(`Success! Order ID: ${data.order_id} \nTotal Paid: $${data.total}`);
+                    cart = [];
+                    renderCart();
+                } else {
+                    alert("Error: " + JSON.stringify(data));
+                }
+            } catch (err) {
+                alert("Network Error");
+            }
+        }
+    </script>
+</body>
+</html>
