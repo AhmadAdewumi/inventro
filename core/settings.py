@@ -161,3 +161,6 @@ REST_FRAMEWORK = {
     ],
     #-- we can add Rate Limiting here later
 }
+
+LOGIN_REDIRECT_URL = '/' #--redirect to homepage on login
+LOGOUT_REDIRECT_URL = '/login/' #-- on sign out, got to login 

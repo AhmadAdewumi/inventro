@@ -1,0 +1,25 @@
+databases:
+  - name: inventro-db
+    databaseName: inventro
+    user: inventro_user
+    plan: free #-- render free tier
+
+services:
+  - type: web
+    name: inventro-app
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn core.wsgi:application"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False" #-- disabled in prod
+      - key: ALLOWED_HOSTS
+        value: "*" 
+      - key: DATABASE_URL
+        fromDatabase:
+          name: inventro-db
+          property: connectionString

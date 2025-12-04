@@ -12,7 +12,9 @@ from .serializers import (ProductVariantSerializer, PurchaseItemSerializer,
                           PurchaseSerializer, InventoryAdjustmentSerializer, 
                           SupplierSerializer, PurchaseOrderSerializer, 
                           PurchaseOrderItemSerializer, CreatePurchaseOrderSerializer,
-                          RefundSerializer, OrderSerializer, InventoryLogSerializer)
+                          RefundSerializer, OrderSerializer, InventoryLogSerializer,
+                          UserSerializer, CreateUserSerializer
+                          )
 from rest_framework.authentication import BasicAuthentication, SessionAuthentication
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
@@ -21,10 +23,12 @@ from .models import (Supplier, PurchaseOrder, PurchaseOrderItem,
                      ProductVariant, Order, Product, ProductVariant,
                      InventoryLog
                      )
+from .permissions import IsManager
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from .utils import generate_barcode_pdf
+from django.contrib.auth.models import User
 import uuid
 
 from django.utils.decorators import method_decorator
@@ -32,6 +36,21 @@ from django.views.decorators.csrf import csrf_exempt
 
 
 # Create your views here.
+
+class UserMetaView(APIView):
+    """
+    Returns role of current user to React
+    """
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({
+            "username": request.user.username,
+            "is_manager": request.user.groups.filter(name='Manager').exists() or request.user.is_superuser,
+            "is_superuser": request.user.is_superuser
+        })
+    
 class ScanItemView(APIView):
     """
     Endpoint: GET /api/scan/<barcode>/
@@ -105,7 +124,7 @@ class InventoryAdjustmentView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-class DashboardStatView(APIView):
+class DashboardStatsView(APIView):
     authentication_classes = [BasicAuthentication] 
     permission_classes = [IsAuthenticated] 
 
@@ -282,6 +301,45 @@ class PurchaseOrderListView(APIView):
     def get(self, request):
         pos = PurchaseOrder.objects.select_related('supplier', 'created_by').order_by('-created_at')[:50]
         return Response(PurchaseOrderSerializer(pos, many=True).data)
+    
+#---------------
+# STAFF MANAGEMENT
+#---------------
+class StaffView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        users = User.objects.filter(is_superuser=False).order_by('-date_joined')
+        return Response(UserSerializer(users, many=True).data)
+
+    def post(self, request):
+        serializer = CreateUserSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                # .save() calls the create() method in the serializer
+                serializer.save()
+                return Response({"message": "Staff created successfully"}, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class StaffActionView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def post(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+            if user.is_superuser: return Response({"error": "Cannot edit owner"}, status=400)
+            
+            user.is_active = not user.is_active
+            user.save()
+            state = "Active" if user.is_active else "Inactive"
+            return Response({"message": f"User is now {state}"})
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=404)
+
     
 @login_required(login_url='login')
 def store_os_view(request):

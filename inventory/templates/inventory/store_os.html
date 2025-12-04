@@ -42,11 +42,8 @@
         .scroller::-webkit-scrollbar { width: 6px; height: 6px; }
         .scroller::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         body { background-color: #f8fafc; }
-        /* Scanner Fixes */
-        #reader { border: none !important; }
-        #reader__scan_region { background: white; }
-        #reader__dashboard_section_csr span { display: none; }
-        #reader__dashboard_section_swaplink { display: none; }
+        /* Hide default scanner elements just in case */
+        #reader video { object-fit: cover; width: 100%; height: 100%; border-radius: 0 0 1rem 1rem; }
     </style>
 </head>
 <body>
@@ -90,13 +87,29 @@
                 try { return JSON.parse(text); } catch { console.error("API Error Text:", text); throw new Error("Server Error (Invalid JSON)"); }
             },
             post: async (endpoint, body) => {
-                const res = await fetch(`/api/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') }, body: JSON.stringify(body) });
+                const res = await fetch(`/api/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+                    body: JSON.stringify(body)
+                });
                 const text = await res.text();
                 try {
                     const json = JSON.parse(text);
-                    if (!res.ok) throw new Error(json.error || 'Request failed');
+                    if (!res.ok) {
+                        const errorMsg = json.error || 
+                                       (json.username ? `Username: ${json.username[0]}` : null) || 
+                                       (json.password ? `Password: ${json.password[0]}` : null) ||
+                                       (json.detail ? json.detail : 'Request failed');
+                        throw new Error(errorMsg);
+                    }
                     return json;
-                } catch { console.error("API Error Text:", text); throw new Error("Server Error (Invalid JSON)"); }
+                } catch (e) { 
+                    if (e.message.includes("Request failed") || !text.startsWith('{')) {
+                        console.error("API Error HTML:", text);
+                        throw new Error(e.message || "Server Error");
+                    }
+                    throw e;
+                }
             },
             download: (endpoint) => window.location.href = `/api/${endpoint}`
         };
@@ -113,14 +126,13 @@
                 }, 16); 
                 return () => clearInterval(timer); 
             }, [end]); 
-            // Safety check for NaN
             const safeCount = isNaN(count) ? 0 : count;
             return <span>{prefix}{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeCount)}</span>; 
         };
         
         const formatCurrency = (n) => {
-            if (n === undefined || n === null || isNaN(n)) return "$0.00";
-            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+            if (n === undefined || n === null || isNaN(n)) return "₦0.00";
+            return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(n);
         };
 
         const formatDate = (d) => {
@@ -158,35 +170,45 @@
             )
         };
 
-        // --- CAMERA COMPONENT ---
+        // --- CAMERA COMPONENT (CUSTOM UI) ---
         const CameraModal = ({ onScan, onClose }) => {
+            const scannerRef = useRef(null);
+
             useEffect(() => {
-                let scanner = null;
+                // Use Html5Qrcode class (not Scanner) for custom UI control
+                const html5QrCode = new Html5Qrcode("reader");
+                scannerRef.current = html5QrCode;
+
+                const config = { fps: 15, qrbox: { width: 250, height: 150 }, aspectRatio: 1.0 };
                 
-                const initScanner = () => {
-                    try {
-                        const config = { 
-                            fps: 20, 
-                            qrbox: { width: 280, height: 150 }, 
-                            aspectRatio: 1.0,
-                            showTorchButtonIfSupported: true,
-                            experimentalFeatures: { useBarCodeDetectorIfSupported: true }
-                        };
+                html5QrCode.start(
+                    { facingMode: "environment" }, 
+                    config, 
+                    (decodedText) => {
+                        html5QrCode.stop().then(() => {
+                            html5QrCode.clear();
+                            onScan(decodedText);
+                        }).catch(err => console.error("Stop failed", err));
+                    },
+                    (errorMessage) => {
+                        // parse error, ignore
+                    }
+                ).catch(err => {
+                    console.error("Start failed", err);
+                    notify("Camera failed. Use HTTPS or localhost.", 'error');
+                    onClose();
+                });
 
-                        scanner = new Html5QrcodeScanner("reader", config, false);
-                        
-                        scanner.render((txt) => { 
-                            scanner.clear(); 
-                            onScan(txt); 
-                        }, (err) => { });
-                    } catch (e) { console.error("Scanner Error:", e); }
-                };
-
-                const timer = setTimeout(initScanner, 200);
-
-                return () => { 
-                    clearTimeout(timer);
-                    try { if(scanner) scanner.clear(); } catch(e){} 
+                return () => {
+                    if (scannerRef.current) {
+                        try {
+                            if (scannerRef.current.isScanning) {
+                                scannerRef.current.stop().then(() => scannerRef.current.clear());
+                            } else {
+                                scannerRef.current.clear();
+                            }
+                        } catch (e) { console.error("Cleanup error", e); }
+                    }
                 };
             }, []);
 
@@ -197,10 +219,15 @@
                             <h3 className="font-bold text-slate-700 flex items-center gap-2"><i className="ph ph-scan text-brand-600"></i> Scan Barcode</h3>
                             <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><i className="ph ph-x text-lg"></i></button>
                         </div>
-                        <div className="p-0 bg-black relative min-h-[300px]">
+                        <div className="p-0 bg-black relative h-[300px] flex items-center justify-center overflow-hidden">
                             <div id="reader" className="w-full h-full"></div>
-                            <div className="absolute bottom-4 left-0 right-0 text-center text-white/80 text-xs pointer-events-none font-bold z-10">
-                                Hold camera steady on barcode
+                            
+                            {/* Custom Overlay Guidelines (Red Laser) */}
+                            <div className="absolute inset-0 pointer-events-none border-2 border-brand-500/30 m-8 rounded-lg"></div>
+                            <div className="absolute top-1/2 left-8 right-8 h-0.5 bg-red-500 shadow-[0_0_8px_red] z-10 opacity-80 animate-pulse"></div>
+                            
+                            <div className="absolute bottom-4 left-0 right-0 text-center text-white/90 text-xs pointer-events-none font-bold z-10 drop-shadow-md">
+                                Align barcode with the red line
                             </div>
                         </div>
                     </div>
@@ -215,56 +242,44 @@
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
 
-            // Effect 1: Fetch Data
             useEffect(() => { 
                 api.get('reports/dashboard/').then(data => {
                     setStats(data);
-                }); 
-            }, []);
-
-            // Effect 2: Render Chart (Only when stats is loaded)
-            useEffect(() => {
-                if (stats && chartRef.current && typeof Chart !== 'undefined') {
-                    // Destroy previous instance to avoid glitches
-                    if (chartInstance.current) {
-                        chartInstance.current.destroy();
-                    }
-
-                    // Create new chart
-                    chartInstance.current = new Chart(chartRef.current, {
-                        type: 'line',
-                        data: {
-                            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                            datasets: [{
-                                label: 'Revenue',
-                                // Use today's revenue as the last point
-                                data: [1200, 1500, 900, 1400, 1100, 800, stats.revenue || 0], 
-                                borderColor: '#2563eb', 
-                                backgroundColor: (ctx) => {
-                                    const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 200);
-                                    gradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
-                                    gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
-                                    return gradient;
+                    setTimeout(() => {
+                        if(chartRef.current && typeof Chart !== 'undefined') {
+                            if(chartInstance.current) chartInstance.current.destroy();
+                            chartInstance.current = new Chart(chartRef.current, {
+                                type: 'line',
+                                data: {
+                                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                    datasets: [{
+                                        label: 'Revenue',
+                                        data: [1200, 1500, 900, 1400, 1100, 800, data.revenue || 0], 
+                                        borderColor: '#2563eb', 
+                                        backgroundColor: (ctx) => {
+                                            const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 200);
+                                            gradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
+                                            gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
+                                            return gradient;
+                                        },
+                                        fill: true, 
+                                        tension: 0.4, 
+                                        pointRadius: 4, 
+                                        pointHoverRadius: 6
+                                    }]
                                 },
-                                fill: true, 
-                                tension: 0.4, 
-                                pointRadius: 4, 
-                                pointHoverRadius: 6
-                            }]
-                        },
-                        options: { 
-                            responsive: true, 
-                            maintainAspectRatio: false,
-                            plugins: { legend: {display: false} }, 
-                            scales: { y: { beginAtZero: true, grid: { borderDash: [2, 4] } }, x: { grid: { display: false } } } 
+                                options: { 
+                                    responsive: true, 
+                                    maintainAspectRatio: false,
+                                    plugins: { legend: {display: false} }, 
+                                    scales: { y: { beginAtZero: true, grid: { borderDash: [2, 4] } }, x: { grid: { display: false } } } 
+                                }
+                            });
                         }
-                    });
-                }
-
-                return () => {
-                    if (chartInstance.current) chartInstance.current.destroy();
-                };
-            }, [stats]); // Re-run when stats are loaded
+                    }, 50);
+                }); 
+                return () => { if(chartInstance.current) chartInstance.current.destroy(); }
+            }, []);
 
             if (!stats) return <div className="p-10 text-slate-400 flex items-center gap-2"><i className="ph ph-spinner animate-spin"></i> Loading...</div>;
 
@@ -272,8 +287,8 @@
                 <div className="space-y-6 animate-fade-in h-full flex flex-col pb-4">
                     <header className="flex justify-between items-end"><div><h1 className="text-3xl font-bold text-slate-800 tracking-tight">Overview</h1><p className="text-slate-500">Store performance for {stats.date}</p></div></header>
                     <div className="grid grid-cols-3 gap-6">
-                        <Card className="border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform duration-300"><div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Revenue</div><div className="text-4xl font-bold text-slate-800"><CountUp end={stats.revenue || 0} prefix="$" /></div></Card>
-                        <Card className={`border-l-4 ${stats.profit>=0?'border-l-brand-500':'border-l-red-500'} group hover:-translate-y-1 transition-transform duration-300`}><div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Net Profit</div><div className={`text-4xl font-bold ${stats.profit>=0?'text-brand-600':'text-red-600'}`}><CountUp end={stats.profit || 0} prefix="$" /></div></Card>
+                        <Card className="border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform duration-300"><div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Revenue</div><div className="text-4xl font-bold text-slate-800"><CountUp end={stats.revenue || 0} prefix="₦" /></div></Card>
+                        <Card className={`border-l-4 ${stats.profit>=0?'border-l-brand-500':'border-l-red-500'} group hover:-translate-y-1 transition-transform duration-300`}><div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Net Profit</div><div className={`text-4xl font-bold ${stats.profit>=0?'text-brand-600':'text-red-600'}`}><CountUp end={stats.profit || 0} prefix="₦" /></div></Card>
                         <Card className="border-l-4 border-l-orange-500 group hover:-translate-y-1 transition-transform duration-300"><div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Low Stock</div><div className="text-4xl font-bold text-orange-500">{stats.low_stock_items || 0}</div></Card>
                     </div>
                     <div className="grid grid-cols-3 gap-6 flex-grow">
@@ -377,8 +392,8 @@
                                             <td className="p-4 font-medium text-slate-700">{p.product_name} <span className="text-slate-400 text-xs block">{p.name_suffix}</span></td>
                                             <td className="p-4 font-mono text-xs text-slate-500">{p.sku}</td>
                                             <td className="p-4 font-mono text-xs bg-slate-50 w-min rounded px-2 py-1">{p.barcode}</td>
-                                            <td className="p-4 text-right text-slate-400">${p.cost_price}</td>
-                                            <td className="p-4 text-right font-bold text-slate-700">${p.price}</td>
+                                            <td className="p-4 text-right text-slate-400">{formatCurrency(p.cost_price)}</td>
+                                            <td className="p-4 text-right font-bold text-slate-700">{formatCurrency(p.price)}</td>
                                             <td className={`p-4 text-right font-bold ${p.stock_quantity<10?'text-red-500':'text-emerald-600'}`}>{p.stock_quantity}</td>
                                         </tr>
                                     ))}
@@ -434,7 +449,7 @@
                                 <div><label className="text-xs font-bold uppercase text-slate-500">Unit Cost</label><input type="number" className="w-full p-2 border rounded mt-1" value={line.cost} onChange={e=>setLine({...line, cost: e.target.value})} /></div>
                                 <Button onClick={addLine} variant="dark" className="col-span-4 mt-2">Add Line Item</Button>
                             </div>
-                            <div className="flex-grow overflow-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-3">Item ID</th><th className="p-3">Qty</th><th className="p-3">Cost</th></tr></thead><tbody>{form.items.map((i,idx)=><tr key={idx} className="border-b"><td className="p-3">{i.variant_id}</td><td className="p-3">{i.quantity}</td><td className="p-3">${i.cost}</td></tr>)}</tbody></table></div>
+                            <div className="flex-grow overflow-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-3">Item ID</th><th className="p-3">Qty</th><th className="p-3">Cost</th></tr></thead><tbody>{form.items.map((i,idx)=><tr key={idx} className="border-b"><td className="p-3">{i.variant_id}</td><td className="p-3">{i.quantity}</td><td className="p-3">{formatCurrency(i.cost)}</td></tr>)}</tbody></table></div>
                             <Button onClick={submit} className="w-full py-3">Confirm & Create PO</Button>
                         </Card>
                     </div>
@@ -459,6 +474,38 @@
             useEffect(() => { api.get('logs/').then(setLogs); }, []);
             return (
                 <div className="h-full flex flex-col gap-4 animate-fade-in"><h1 className="text-2xl font-bold text-slate-800">Audit Trail</h1><Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md"><div className="overflow-auto scroller"><table className="w-full text-left text-sm"><thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500"><tr><th className="p-4">Time</th><th className="p-4">Action</th><th className="p-4">User</th><th className="p-4">Product</th><th className="p-4 text-right">Change</th><th className="p-4">Note</th></tr></thead><tbody className="divide-y divide-slate-100">{logs.map(l=><tr key={l.id} className="hover:bg-slate-50"><td className="p-4 text-slate-400 text-xs font-mono">{formatDate(l.created_at)}</td><td className="p-4 uppercase font-bold text-xs tracking-wider">{l.action}</td><td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{l.user_name}</span></td><td className="p-4 font-medium">{l.product_name}</td><td className={`p-4 text-right font-mono font-bold ${l.quantity_change>0?'text-emerald-600':'text-red-500'}`}>{l.quantity_change>0?'+':''}{l.quantity_change}</td><td className="p-4 text-slate-500 italic text-xs">{l.note}</td></tr>)}</tbody></table></div></Card></div>
+            );
+        };
+
+        const StaffManager = () => {
+            const [staff, setStaff] = useState([]);
+            const [showModal, setShowModal] = useState(false);
+            useEffect(() => { loadStaff(); }, []);
+            const loadStaff = () => api.get('staff/').then(setStaff);
+            const toggleStatus = async (id) => { if(!confirm("Change status?")) return; try { await api.post(`staff/${id}/toggle/`, {}); loadStaff(); notify("Status Updated"); } catch(e) { notify(e.message, 'error'); } };
+
+            const AddStaffModal = () => {
+                const [form, setForm] = useState({ username: '', password: '', role: 'Cashier' });
+                const submit = async (e) => { e.preventDefault(); try { await api.post('staff/', form); setShowModal(false); loadStaff(); notify("Staff Created!"); } catch(e) { notify(e.message, 'error'); } };
+                return (
+                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fade-in"><div className="bg-white p-8 rounded-2xl w-96 shadow-2xl">
+                        <h2 className="text-2xl font-bold mb-6 text-slate-800">New Staff</h2>
+                        <form onSubmit={submit} className="space-y-4">
+                            <Input label="Username" required onChange={e=>setForm({...form, username: e.target.value})} />
+                            <Input label="Password" type="password" required onChange={e=>setForm({...form, password: e.target.value})} />
+                            <div className="flex flex-col gap-1"><label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Role</label><select className="w-full p-2.5 rounded-lg border border-slate-300 focus:border-brand-500 outline-none bg-white" onChange={e=>setForm({...form, role: e.target.value})}><option value="Cashier">Cashier</option><option value="Manager">Manager</option></select></div>
+                            <div className="flex gap-3 mt-6 pt-2"><Button type="button" variant="ghost" className="w-full" onClick={()=>setShowModal(false)}>Cancel</Button><Button type="submit" className="w-full">Create</Button></div>
+                        </form>
+                    </div></div>
+                );
+            };
+
+            return (
+                <div className="h-full flex flex-col gap-6 animate-fade-in">
+                    {showModal && <AddStaffModal />}
+                    <div className="flex justify-between items-center"><h1 className="text-2xl font-bold text-slate-800">Staff Management</h1><Button onClick={()=>setShowModal(true)}><i className="ph ph-user-plus"></i> Add Staff</Button></div>
+                    <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md"><div className="overflow-auto scroller"><table className="w-full text-left text-sm"><thead className="bg-slate-50 font-bold border-b text-slate-500 sticky top-0 z-10"><tr><th className="p-4">Username</th><th className="p-4">Role</th><th className="p-4">Joined</th><th className="p-4">Status</th><th className="p-4">Action</th></tr></thead><tbody className="divide-y divide-slate-100 bg-white">{staff.map(u => (<tr key={u.id} className="hover:bg-slate-50 transition-colors"><td className="p-4 font-bold text-slate-700">{u.username}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold uppercase ${u.role==='Manager'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{u.role}</span></td><td className="p-4 text-slate-500">{formatDate(u.date_joined)}</td><td className="p-4"><StatusBadge status={u.is_active ? 'completed' : 'canceled'} /></td><td className="p-4"><Button size="sm" variant="ghost" onClick={()=>toggleStatus(u.id)} className={u.is_active ? "text-red-500 hover:bg-red-50" : "text-green-600 hover:bg-green-50"}>{u.is_active ? "Deactivate" : "Activate"}</Button></td></tr>))}</tbody></table></div></Card>
+                </div>
             );
         };
 
@@ -540,7 +587,7 @@
                                             <span className="w-8 text-center font-bold">{i.qty}</span>
                                             <button onClick={() => updateQty(i.barcode, i.qty + 1)} className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">+</button>
                                         </div>
-                                        <div className="w-24 text-right font-mono text-slate-600">${(i.price*i.qty).toFixed(2)}</div>
+                                        <div className="w-24 text-right font-mono text-slate-600">{formatCurrency(i.price*i.qty)}</div>
                                         <button onClick={()=>setCart(cart.filter(x=>x.barcode!==i.barcode))} className="w-10 text-slate-300 hover:text-red-500"><i className="ph ph-trash text-xl"></i></button>
                                     </div>
                                 ))}
@@ -609,7 +656,7 @@
                                 const cur = refundData[item.id] || {qty:0};
                                 return (
                                     <div key={item.id} className={`p-4 rounded-lg border transition-all ${eligible>0 ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                                        <div className="flex justify-between mb-1"><span className="font-bold text-slate-700">{item.product_name}</span><span className="font-mono text-slate-500">${item.unit_price}</span></div>
+                                        <div className="flex justify-between mb-1"><span className="font-bold text-slate-700">{item.product_name}</span><span className="font-mono text-slate-500">{formatCurrency(item.unit_price)}</span></div>
                                         <div className="text-xs text-slate-400 mb-3 flex gap-3"><span>Bought: <b className="text-slate-700">{item.quantity}</b></span><span>Returned: <b className="text-red-500">{item.refunded_quantity}</b></span></div>
                                         {eligible > 0 && <div className="flex items-center gap-3 bg-slate-50 p-2 rounded border border-slate-100">
                                             <div className="flex items-center gap-2"><label className="text-[10px] font-bold uppercase text-slate-400">Return</label><input type="number" min="0" max={eligible} value={cur.qty} onChange={e=>handleQty(item.id, e.target.value, eligible)} className="w-16 p-1 text-center font-bold border rounded outline-none focus:border-brand-500" /></div>
@@ -648,34 +695,59 @@
 
         const App = () => {
             const [view, setView] = useState('dashboard');
+            const [user, setUser] = useState(null);
             const [modalParams, setModalParams] = useState(false);
-            useEffect(() => { const v = localStorage.getItem('view'); if(v) setView(v); }, []);
+
+            useEffect(() => { 
+                api.get('me/').then(setUser).catch(() => window.location.href = '/login/');
+                const v = localStorage.getItem('view'); if(v) setView(v); 
+            }, []);
+
             const nav = (v, params=false) => { setView(v); setModalParams(params); localStorage.setItem('view', v); };
             const NavItem = ({ id, icon, label }) => ( <button onClick={() => nav(id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl mb-1 transition-all ${view===id ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><i className={`ph ${icon} text-xl`}></i><span className="font-medium tracking-wide">{label}</span></button> );
             
+            if (!user) return <div className="h-screen flex items-center justify-center text-slate-400"><i className="ph ph-spinner animate-spin text-2xl"></i></div>;
+
             return (
                 <div className="flex h-screen w-full bg-slate-100 font-sans text-slate-900">
                     <aside className="w-72 bg-slate-900 flex flex-col p-6 flex-shrink-0">
-                        <div className="flex items-center gap-3 mb-10 px-2"><div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-brand-500/20">I</div><span className="text-2xl font-bold text-white tracking-tight">Inventro</span></div>
+                        <div className="flex items-center gap-3 mb-10 px-2"><div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-brand-500/20">I</div>
+                            <div>
+                                <span className="text-xl font-bold text-white tracking-tight block leading-none">Inventro</span>
+                                <span className="text-xs text-slate-500 font-mono uppercase">{user.is_manager ? 'Manager' : 'Cashier'}</span>
+                            </div>
+                        </div>
                         <nav className="flex-grow space-y-1">
-                            <NavItem id="dashboard" icon="ph-chart-pie-slice" label="Dashboard" />
                             <NavItem id="pos" icon="ph-shopping-cart" label="POS Terminal" />
                             <NavItem id="orders" icon="ph-receipt" label="Orders & Refunds" />
-                            <div className="pt-6 pb-2"><span className="text-xs font-bold uppercase text-slate-600 px-4 tracking-wider">Management</span></div>
-                            <NavItem id="inventory" icon="ph-package" label="Inventory" />
-                            <NavItem id="procurement" icon="ph-truck" label="Procurement" />
-                            <NavItem id="audit" icon="ph-list-magnifying-glass" label="Audit Logs" />
+
+                            {user.is_manager && (
+                                <>
+                                    <div className="pt-6 pb-2"><span className="text-xs font-bold uppercase text-slate-600 px-4 tracking-wider">Management</span></div>
+                                    <NavItem id="dashboard" icon="ph-chart-pie-slice" label="Overview" />
+                                    <NavItem id="inventory" icon="ph-package" label="Inventory" />
+                                    <NavItem id="procurement" icon="ph-truck" label="Procurement" />
+                                    <NavItem id="staff" icon="ph-users" label="Staff" />
+                                    <NavItem id="audit" icon="ph-list-magnifying-glass" label="Audit Logs" />
+                                </>
+                            )}
                         </nav>
-                        <div className="mt-auto pt-6 border-t border-slate-800"><a href="/logout/" className="flex items-center gap-3 px-4 py-2 text-red-400 hover:text-red-300 text-sm font-medium transition-colors"><i className="ph ph-sign-out text-lg"></i> Sign Out</a></div>
+                        <div className="mt-auto pt-6 border-t border-slate-800">
+                            <div className="px-4 mb-4 text-slate-500 text-xs">Logged in as <strong className="text-slate-300">{user.username}</strong></div>
+                            <a href="/logout/" className="flex items-center gap-3 px-4 py-2 text-red-400 hover:text-red-300 text-sm font-medium transition-colors"><i className="ph ph-sign-out text-lg"></i> Sign Out</a>
+                        </div>
                     </aside>
                     <main className="flex-grow p-8 overflow-hidden h-full relative">
                         <ErrorBoundary>
-                            {view==='dashboard' && <Dashboard onNavigate={nav}/>}
+                            {user.is_manager && view==='dashboard' && <Dashboard onNavigate={nav}/>}
+                            {user.is_manager && view==='inventory' && <InventoryManager openModalOnLoad={modalParams}/>}
+                            {user.is_manager && view==='procurement' && <Procurement openCreateOnLoad={modalParams}/>}
+                            {user.is_manager && view==='audit' && <AuditLogs/>}
+                            {user.is_manager && view==='staff' && <StaffManager/>}
+                            
+                            {/* Shared Views */}
                             {view==='pos' && <PosTerminal/>}
                             {view==='orders' && <OrderHistory/>}
-                            {view==='inventory' && <InventoryManager openModalOnLoad={modalParams}/>}
-                            {view==='procurement' && <Procurement openCreateOnLoad={modalParams}/>}
-                            {view==='audit' && <AuditLogs/>}
                         </ErrorBoundary>
                     </main>
                 </div>

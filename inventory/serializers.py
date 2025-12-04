@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth.models import User, Group
 from .models import ProductVariant, Order, Supplier, PurchaseOrder, PurchaseOrderItem, OrderItem, InventoryLog
 
 #-- just like dto + mappers in Java, Ahh, I miss Java
@@ -103,3 +104,35 @@ class InventoryLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = InventoryLog
         fields = ['id', 'action', 'quantity_change', 'stock_after', 'note', 'created_at', 'product_name', 'sku', 'user_name']
+
+
+class UserSerializer(serializers.ModelSerializer):
+    role = serializers.SerializerMethodField()
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'is_active', 'date_joined', 'role']
+
+    def get_role(self, obj):
+        if obj.is_superuser: return "Owner"
+        return obj.groups.first().name if obj.groups.exists() else "Staff"
+    
+class CreateUserSerializer(serializers.ModelSerializer):
+    #-- we are handling role manually because it is not a field on User model, it's a relationship
+    role = serializers.ChoiceField(choices=['Cashier', 'Manager'], write_only=True)
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['username', 'password', 'role']
+
+    def create(self, validated_data):
+        role_name = validated_data.pop('role')
+        password = validated_data.pop('password')
+        
+        #-- create_user handles password hashing automatically
+        user = User.objects.create_user(password=password, **validated_data)
+        
+        group, _ = Group.objects.get_or_create(name=role_name)
+        user.groups.add(group)
+        
+        return user
