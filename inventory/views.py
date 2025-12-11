@@ -1,38 +1,40 @@
-from django.shortcuts import render, redirect
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from .services import (get_product_by_barcode, process_purchase, adjust_inventory, 
-                       get_dashboard_stats, get_top_selling_items, receive_purchase_order,
-                       process_refund, create_product_and_variant, get_barcode_pdf_buffer,
-                       create_purchase_order
-                       )
-from .serializers import (ProductVariantSerializer, PurchaseItemSerializer,
-                          PurchaseSerializer, InventoryAdjustmentSerializer, 
-                          SupplierSerializer, PurchaseOrderSerializer, 
-                          PurchaseOrderItemSerializer, CreatePurchaseOrderSerializer,
-                          RefundSerializer, OrderSerializer, InventoryLogSerializer,
-                          UserSerializer, CreateUserSerializer
-                          )
-from rest_framework.authentication import BasicAuthentication, SessionAuthentication
+import io
+import traceback
+import uuid
+from os import name
+
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
-import traceback
-from .models import (Supplier, PurchaseOrder, PurchaseOrderItem, 
-                     ProductVariant, Order, Product, ProductVariant,
-                     InventoryLog
-                     )
-from .permissions import IsManager
-from django.db import transaction
+from django.contrib.auth.models import User
+from django.core.management import call_command
 from django.db.models import Q
 from django.http import HttpResponse
-from .utils import generate_barcode_pdf
-from django.contrib.auth.models import User
-import uuid
-
+from django.shortcuts import render, redirect
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework import status
+from rest_framework.authentication import BasicAuthentication, SessionAuthentication
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import (Supplier, PurchaseOrder, Order, ProductVariant,
+                     InventoryLog, Customer, StocktakeSession, Notification, StoreSettings
+                     )
+from .permissions import IsManager
+from .serializers import (ProductVariantSerializer, PurchaseSerializer, InventoryAdjustmentSerializer,
+                          SupplierSerializer, PurchaseOrderSerializer,
+                          CreatePurchaseOrderSerializer,
+                          RefundSerializer, OrderSerializer, InventoryLogSerializer,
+                          UserSerializer, CreateUserSerializer, CustomerSerializer, StocktakeSessionSerializer,
+                          NotificationSerializer, StoreSettingsSerializer
+                          )
+from .services import (get_product_by_barcode, process_purchase, adjust_inventory,
+                       get_dashboard_stats, get_top_selling_items, receive_purchase_order,
+                       process_refund, create_product_and_variant, get_barcode_pdf_buffer,
+                       create_purchase_order, start_stocktake, update_stocktake_item, approve_stocktake
+                       )
+from .utils import export_sales_csv, export_inventory_csv
 
 
 # Create your views here.
@@ -50,7 +52,8 @@ class UserMetaView(APIView):
             "is_manager": request.user.groups.filter(name='Manager').exists() or request.user.is_superuser,
             "is_superuser": request.user.is_superuser
         })
-    
+
+
 class ScanItemView(APIView):
     """
     Endpoint: GET /api/scan/<barcode>/
@@ -59,7 +62,7 @@ class ScanItemView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, barcode):
-        #-- we call the service method
+        # -- we call the service method
         variant = get_product_by_barcode(barcode)
 
         if not variant:
@@ -67,95 +70,97 @@ class ScanItemView(APIView):
                 {"error": "Product not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
-        #-- serializing the object to json
+
+        # -- serializing the object to json
         data = ProductVariantSerializer(variant).data
 
         return Response(data, status=status.HTTP_200_OK)
-    
+
 
 @method_decorator(csrf_exempt, name='dispatch')
 class PurchaseView(APIView):
-    authentication_classes = [BasicAuthentication] 
-    permission_classes = [IsAuthenticated] 
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         serializer = PurchaseSerializer(data=request.data)
         if serializer.is_valid():
             try:
                 order = process_purchase(
-                    user=request.user, 
-                    payment_method=serializer.validated_data['payment_method'], # Pass this
-                    items_data=serializer.validated_data['items']
+                    request.user,
+                    serializer.validated_data['payment_method'],
+                    serializer.validated_data['items'],
+                    serializer.validated_data.get('customer_id'),
+                    serializer.validated_data.get('is_quote', False)
                 )
+                msg = "Quote Created" if serializer.validated_data.get('is_quote') else "Success"
                 return Response(
-                    {"message": "Success", "order_id": order.id, "total": order.total_amount}, 
+                    {"message": msg, "order_id": order.id, "total": order.total_amount},
                     status=status.HTTP_201_CREATED
                 )
             except Exception as e:
-
-                print("!!!!!!!! ERROR TRACEBACK !!!!!!!!")
-                print(traceback.format_exc()) 
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InventoryAdjustmentView(APIView):
-    authentication_classes = [BasicAuthentication] 
-    permission_classes = [IsAuthenticated] 
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = InventoryAdjustmentSerializer(data = request.data)
+        serializer = InventoryAdjustmentSerializer(data=request.data)
         if serializer.is_valid():
             try:
                 variant = adjust_inventory(request.user, serializer.validated_data)
                 return Response({
-                    "message" : "Stock Updated Successfully",
-                    "sku" : variant.sku,
-                    "new_quantity" : variant.stock_quantity
+                    "message": "Stock Updated Successfully",
+                    "sku": variant.sku,
+                    "new_quantity": variant.stock_quantity
                 }, status=status.HTTP_200_OK)
             except Exception as e:
                 return Response({
-                    "error" : str(e)
+                    "error": str(e)
                 }, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+
 class DashboardStatsView(APIView):
-    authentication_classes = [BasicAuthentication] 
-    permission_classes = [IsAuthenticated] 
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         stats = get_dashboard_stats()
         return Response(stats)
-    
+
+
 class TopSellingProductView(APIView):
-    authentication_classes = [BasicAuthentication] 
-    permission_classes = [IsAuthenticated] 
+    authentication_classes = [BasicAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         data = get_top_selling_items()
         return Response(data)
-    
+
+
 class SupplierListView(APIView):
     def get(self, request):
         suppliers = Supplier.objects.all()
-        return Response(SupplierSerializer(suppliers, many = True).data)
-    
+        return Response(SupplierSerializer(suppliers, many=True).data)
+
     def post(self, request):
-        serializer = SupplierSerializer(data = request.data)
+        serializer = SupplierSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class PurchaseOrderView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request):
         serializer = CreatePurchaseOrderSerializer(data=request.data)
         if serializer.is_valid():
@@ -166,67 +171,71 @@ class PurchaseOrderView(APIView):
             except Exception as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
 
-@method_decorator(csrf_exempt, name='dispatch')    
+
+@method_decorator(csrf_exempt, name='dispatch')
 class ReceivePurchaseOrderView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, po_id): #-- po_id --> purchase order id
+    def post(self, request, po_id):  # -- po_id --> purchase order id
         try:
             receive_purchase_order(request.user, po_id)
             return Response({
-                "message" : "Stock received successfully"
+                "message": "Stock received successfully"
             })
         except Exception as e:
             return Response({
-                "error" : str(e)
+                "error": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @method_decorator(csrf_exempt, name='dispatch')
 class RefundView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
-    permission_classes = [IsAuthenticated] 
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         serializer = RefundSerializer(data=request.data)
         if serializer.is_valid():
             try:
-                result = process_refund(request.user, serializer.validated_data['order_id'], serializer.validated_data['items'])
+                result = process_refund(request.user, serializer.validated_data['order_id'],
+                                        serializer.validated_data['items'])
                 return Response(result, status=status.HTTP_200_OK)
             except Exception as e:
                 print(traceback.format_exc())
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
 
 class OrderListView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        orders = Order.objects.select_related('cashier').prefetch_related('items__variant__product').order_by('-created_at')
+        orders = Order.objects.select_related('cashier').prefetch_related('items__variant__product').order_by(
+            '-created_at')
 
         status_param = request.query_params.get('status')
         if status_param == 'refunded':
-            #-- show orders that are explicitly 'refunded' OR have items with refunded qty > 0
-            #-- this catches "Partial Refunds" that might still be marked 'completed'
+            # -- show orders that are explicitly 'refunded' OR have items with refunded qty > 0
+            # -- this catches "Partial Refunds" that might still be marked 'completed'
             orders = orders.filter(Q(status='refunded') | Q(items__refunded_quantity__gt=0)).distinct()
         elif status_param == 'completed':
             orders = orders.filter(status='completed')
         elif status_param == 'pending':
             orders = orders.filter(status='pending')
 
-        #-- if status is None or all, we return everything
+        # -- if status is None or all, we return everything
 
         return Response(OrderSerializer(orders[:50], many=True).data)
-    
+
+
 class ProductListView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def get(self, request): #-- search functionality
+    def get(self, request):  # -- search functionality
         query = request.query_params.get('search', '')
         variants = ProductVariant.objects.select_related('product').all().order_by('-stock_quantity')
 
@@ -237,11 +246,10 @@ class ProductListView(APIView):
                 Q(barcode__icontains=query)
             )
 
-            #-- Pagination, limit to 50
+            # -- Pagination, limit to 50
         return Response(ProductVariantSerializer(variants[:50], many=True).data)
-        
-    
-    #-- to create product and variants in a GO
+
+    # -- to create product and variants in a GO
     # -- expected json --> { name, category, price, cost, stock, barcode, sku }, description as an optional fields can be included    
     def post(self, request):
         try:
@@ -250,27 +258,35 @@ class ProductListView(APIView):
         except Exception as e:
             return Response(
                 {
-                    "error" : str(e)
-                }, status= status.HTTP_400_BAD_REQUEST
+                    "error": str(e)
+                }, status=status.HTTP_400_BAD_REQUEST
             )
-        
+
+
 class PurchaseOrderListView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         pos = PurchaseOrder.objects.select_related('supplier', 'created_by').order_by('-created_at')[:50]
-        return Response(PurchaseOrderSerializer(pos, many = True).data)
-    
+        return Response(PurchaseOrderSerializer(pos, many=True).data)
+
+
 class AuditLogView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
-    permission_classes = [IsAuthenticated]
-
+    permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request):
-        logs = InventoryLog.objects.select_related('variant__product', 'user').order_by('-created_at')[:50]
-        return Response(InventoryLogSerializer(logs, many=True).data)
-    
+        logs = InventoryLog.objects.select_related('variant__product', 'user').order_by('-created_at')
+
+        # NEW: Filter by Product Variant ID
+        variant_id = request.query_params.get('variant_id')
+        if variant_id:
+            logs = logs.filter(variant_id=variant_id)
+
+        return Response(InventoryLogSerializer(logs[:100], many=True).data)
+
+
 class BarcodeGeneratorView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated]
@@ -278,33 +294,36 @@ class BarcodeGeneratorView(APIView):
     def get(self, request):
         category = request.query_params.get('category')
         ids_param = request.query_params.get('ids')
-        
+
         variant_ids = None
         if ids_param:
-            #-- converts "1,2,3" string into list [1, 2, 3]
+            # -- converts "1,2,3" string into list [1, 2, 3]
             try:
-                variant_ids = [int(x) for x in ids_param.split(',') if x.isdigit()] #-- list comprehension
+                variant_ids = [int(x) for x in ids_param.split(',') if x.isdigit()]  # -- list comprehension
             except ValueError:
-                pass #-- ignores bad input
+                pass  # -- ignores bad input
 
         pdf_buffer = get_barcode_pdf_buffer(category, variant_ids)
 
         filename = f"barcodes_{uuid.uuid4().hex[:6].upper()}.pdf"
 
-        response = HttpResponse(pdf_buffer, content_type = 'application/pdf')
+        response = HttpResponse(pdf_buffer, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
-    
+
+
 class PurchaseOrderListView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated]
+
     def get(self, request):
         pos = PurchaseOrder.objects.select_related('supplier', 'created_by').order_by('-created_at')[:50]
         return Response(PurchaseOrderSerializer(pos, many=True).data)
-    
-#---------------
+
+
+# ---------------
 # STAFF MANAGEMENT
-#---------------
+# ---------------
 class StaffView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
@@ -323,7 +342,8 @@ class StaffView(APIView):
             except Exception as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+
 class StaffActionView(APIView):
     authentication_classes = [SessionAuthentication, BasicAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
@@ -332,7 +352,7 @@ class StaffActionView(APIView):
         try:
             user = User.objects.get(id=user_id)
             if user.is_superuser: return Response({"error": "Cannot edit owner"}, status=400)
-            
+
             user.is_active = not user.is_active
             user.save()
             state = "Active" if user.is_active else "Inactive"
@@ -340,10 +360,211 @@ class StaffActionView(APIView):
         except User.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
 
-    
+
+class ExportSalesView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        # Export all completed orders
+        orders = Order.objects.filter(status='completed').select_related('cashier').order_by('-created_at')
+        csv_data = export_sales_csv(orders)
+
+        filename = f"sales_ledger_{uuid.uuid4().hex[:6].upper()}.csv"
+
+        response = HttpResponse(csv_data, content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+class ExportInventoryView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        variants = ProductVariant.objects.select_related('product').all()
+        csv_data = export_inventory_csv(variants)
+
+        filename = f"inventory_valuation_{uuid.uuid4().hex[:6].upper()}.csv"
+
+        response = HttpResponse(csv_data, content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+class DatabaseBackupView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        # Uses Django's built-in dumpdata command
+        buffer = io.StringIO()
+        call_command('dumpdata', 'inventory', stdout=buffer)
+
+        filename = f"backup_{uuid.uuid4().hex[:6].upper()}.json"
+
+        response = HttpResponse(buffer.getvalue(), content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+class CustomerView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]  # Cashiers can view/add customers
+
+    def get(self, request):
+        query = request.query_params.get('search', '')
+        customers = Customer.objects.all().order_by('-created_at')
+        if query:
+            customers = customers.filter(
+                Q(name__icontains=query) | Q(phone__icontains=query)
+            )
+        return Response(CustomerSerializer(customers[:50], many=True).data)
+
+    def post(self, request):
+        serializer = CustomerSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@login_required(login_url='login')
+def receipt_view(request, order_id):
+    try:
+        order = Order.objects.select_related('cashier', 'customer').prefetch_related('items__variant__product').get(
+            id=order_id)
+
+        # Calculate Tax Breakdown logic
+        # We need to loop through items to sum up the hidden tax parts
+        total_tax = 0
+        subtotal_ex_tax = 0
+
+        for item in order.items.all():
+            # Formula: Tax = Price - (Price / (1 + rate/100))
+            # We use the variant's tax_rate stored at the time (Note: ideally OrderItem should freeze tax_rate too, but we'll use current for V1)
+            rate = item.variant.tax_rate
+            line_total = item.get_total()
+
+            if rate > 0:
+                # Example: 107.50 / 1.075 = 100.00
+                ex_tax = line_total / (1 + (rate / 100))
+                tax_amt = line_total - ex_tax
+                total_tax += tax_amt
+                subtotal_ex_tax += ex_tax
+            else:
+                subtotal_ex_tax += line_total
+
+        settings, _ = StoreSettings.objects.get_or_create(id=1)
+        context = {
+            'order': order,
+            'settings': settings,
+            'total_tax': round(total_tax, 2),
+            'subtotal': round(subtotal_ex_tax, 2)
+        }
+        return render(request, 'inventory/receipt.html', context)
+
+    except Order.DoesNotExist:
+        return HttpResponse("Order not found", status=404)
+
+
+class StocktakeListView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        sessions = StocktakeSession.objects.order_by('-created_at')[:20]
+        return Response(StocktakeSessionSerializer(sessions, many=True).data)
+
+    def post(self, request):
+        # Start new session
+        try:
+            session = start_stocktake(request.user, request.data.get('note', ''))
+            return Response({"message": "Stocktake Started", "id": session.id}, status=201)
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+
+class StocktakeDetailView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request, pk):
+        try:
+            session = StocktakeSession.objects.prefetch_related('items__variant__product').get(id=pk)
+            return Response(StocktakeSessionSerializer(session).data)
+        except StocktakeSession.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+
+    def post(self, request, pk):
+        # Update count for an item
+        # Body: { barcode: "123", quantity: 50 }
+        barcode = request.data.get('barcode')
+        qty = request.data.get('quantity')
+        try:
+            update_stocktake_item(pk, barcode, qty)
+            return Response({"message": "Count updated"})
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+    def put(self, request, pk):
+        # Approve/Finalize Session
+        try:
+            approve_stocktake(request.user, pk)
+            return Response({"message": "Stocktake Completed & Inventory Updated"})
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+
+# --- SETTINGS VIEW ---
+class StoreSettingsView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Get or create the singleton record
+        settings, _ = StoreSettings.objects.get_or_create(id=1)
+        return Response(StoreSettingsSerializer(settings).data)
+
+    def post(self, request):
+        if not (request.user.is_superuser or request.user.groups.filter(name='Manager').exists()):
+            return Response({
+                "error" : "Permission denied: Managers only"
+            }, status = status.HTTP_403_FORBIDDEN)
+
+        settings, _ = StoreSettings.objects.get_or_create(id=1)
+        serializer = StoreSettingsSerializer(settings, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+
+
+# --- NOTIFICATIONS VIEW ---
+class NotificationView(APIView):
+    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    permission_classes = [IsAuthenticated]  # Cashiers can see alerts too? Maybe just managers.
+
+    def get(self, request):
+        # Unread notifications
+        notifs = Notification.objects.filter(is_read=False).order_by('-created_at')
+        return Response(NotificationSerializer(notifs, many=True).data)
+
+    def put(self, request, pk):
+        # Mark as read
+        try:
+            notif = Notification.objects.get(id=pk)
+            notif.is_read = True
+            notif.save()
+            return Response({"status": "ok"})
+        except Notification.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+
+
 @login_required(login_url='login')
 def store_os_view(request):
     return render(request, 'inventory/store_os.html')
+
 
 def logout_view(request):
     logout(request)

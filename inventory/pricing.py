@@ -1,6 +1,9 @@
 from decimal import Decimal
-from .models import Promotion
+
 from django.db.models import Q
+
+from .models import Promotion
+
 
 def calculate_dynamic_price(variant, quantity, manual_discount_percent = 0):
     """

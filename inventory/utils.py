@@ -1,8 +1,11 @@
+import csv
 import io
-from reportlab.pdfgen import canvas
+
+from reportlab.graphics.barcode import code128  # -- standard for product labels
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.graphics.barcode import code128 #-- standard for product labels
+from reportlab.pdfgen import canvas
+
 
 # Note: We removed 'Drawing' and 'renderPDF' imports as they caused the crash
 
@@ -62,3 +65,46 @@ def generate_barcode_pdf(variants):
     p.save() #-- finalizes the pdf and writes to buffer (in memory)
     buffer.seek(0) #-- moves the pointer to the start of the PDF , so django don't start reading from the end of file and won't see anything
     return buffer #-- give  it back to django
+
+def export_sales_csv(orders):
+    """
+    Generates a CSV of sales for accounting.
+    Columns: Date, Order ID, Cashier, Method, Total, Status
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(['Date', 'Order ID', 'Cashier', 'Payment Method', 'Total', 'Status'])
+    
+    for order in orders:
+        writer.writerow([
+            order.created_at.strftime("%Y-%m-%d %H:%M"),
+            order.id,
+            order.cashier.username,
+            order.payment_method,
+            order.total_amount,
+            order.status
+        ])
+    
+    return buffer.getvalue()
+
+def export_inventory_csv(variants):
+    """
+    Generates a CSV of current stock value.
+    Columns: SKU, Product, Stock, Cost Price, Selling Price, Total Asset Value
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(['SKU', 'Product', 'Stock', 'Cost Price', 'Selling Price', 'Total Asset Value'])
+    
+    for v in variants:
+        asset_value = v.stock_quantity * v.cost_price
+        writer.writerow([
+            v.sku,
+            v.product.name + ' ' + v.name_suffix,
+            v.stock_quantity,
+            v.cost_price,
+            v.price,
+            asset_value
+        ])
+        
+    return buffer.getvalue()

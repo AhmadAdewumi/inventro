@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Receipt #{{ order.id }}</title>
+    <style>
+        @page { margin: 0; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            width: 78mm; /* Fits 80mm paper with margin */
+            margin: 2mm auto;
+            background: #fff;
+            font-size: 12px;
+            color: #000;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .bold { font-weight: bold; }
+        .border-bottom { border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; }
+        .section { margin-bottom: 10px; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        td, th { vertical-align: top; padding: 2px 0; }
+        .col-qty { width: 10%; }
+        .col-item { width: 60%; }
+        .col-price { width: 30%; text-align: right; }
+        
+        .totals-row { display: flex; justify-content: space-between; }
+        .big-total { font-size: 16px; font-weight: bold; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 5px 0; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <!-- 1. HEADER -->
+    <div class="section text-center border-bottom">
+        <div style="font-size: 18px; font-weight: bold;">{{ settings.store_name }}</div>
+        <div>{{ settings.address }}</div>
+        <div>{{ settings.phone }}</div>
+        {% if settings.email %}<div>{{ settings.email }}</div>{% endif %}
+    </div>
+
+    <!-- 2. INFO -->
+    <div class="section">
+        <div>Rcpt #: <strong>{{ order.id }}</strong></div>
+        <div>Date: {{ order.created_at|date:"d/m/Y H:i" }}</div>
+        <div>Cashier: {{ order.cashier.username|title }}</div>
+        {% if order.customer %}
+        <div>Cust: {{ order.customer.name }}</div>
+        {% endif %}
+    </div>
+
+    <!-- 3. ITEMS -->
+    <div class="section border-bottom">
+        <table>
+            <thead>
+                <tr style="border-bottom: 1px solid #000;">
+                    <th class="col-qty">Q</th>
+                    <th class="col-item">Item</th>
+                    <th class="col-price">Amt</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in order.items.all %}
+                <tr>
+                    <td>{{ item.quantity }}</td>
+                    <td>
+                        {{ item.variant.product.name }}
+                        {% if item.variant.tax_rate > 0 %} <span style="font-size: 9px;">(T)</span>{% endif %}
+                        <div style="font-size: 10px; color: #555;">{{ item.variant.sku }}</div>
+                    </td>
+                    <td class="text-right">{{ item.get_total }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 4. TOTALS -->
+    <div class="section">
+        <div class="totals-row">
+            <span>Subtotal (Ex-Tax):</span>
+            <span>{{ subtotal }}</span>
+        </div>
+        {% if total_tax > 0 %}
+        <div class="totals-row">
+            <span>VAT / Tax:</span>
+            <span>{{ total_tax }}</span>
+        </div>
+        {% endif %}
+        
+        <div class="totals-row big-total">
+            <span>TOTAL:</span>
+            <span>₦{{ order.total_amount }}</span>
+        </div>
+        
+        <div class="totals-row" style="margin-top: 5px;">
+            <span>Paid via:</span>
+            <span style="text-transform: uppercase;">{{ order.payment_method }}</span>
+        </div>
+    </div>
+
+    <!-- 5. FOOTER -->
+    <div class="text-center" style="margin-top: 20px; font-size: 10px;">
+        Thanks for your patronage!<br>
+        Goods bought in good condition<br>cannot be returned.<br>
+        <br>
+        Powered by Inventro OS
+    </div>
+
+    <script>
+        // Auto-print immediately
+        window.onload = function() {
+            window.print();
+            // Optional: Close window after print dialog closes (works in some browsers)
+            // window.onafterprint = function() { window.close(); }
+        }
+    </script>
+</body>
+</html>

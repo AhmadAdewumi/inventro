@@ -1,6 +1,11 @@
-from rest_framework import serializers
 from django.contrib.auth.models import User, Group
-from .models import ProductVariant, Order, Supplier, PurchaseOrder, PurchaseOrderItem, OrderItem, InventoryLog
+from rest_framework import serializers
+
+from .models import (ProductVariant, Order, Supplier, PurchaseOrder,
+                     PurchaseOrderItem, OrderItem, InventoryLog, Customer,
+                     StocktakeItem, StocktakeSession, StoreSettings, Notification
+                     )
+
 
 #-- just like dto + mappers in Java, Ahh, I miss Java
 class ProductVariantSerializer(serializers.ModelSerializer):
@@ -26,7 +31,9 @@ class PurchaseItemSerializer(serializers.Serializer):
 class PurchaseSerializer(serializers.Serializer):
     #-- validates the whole request, tells DRF to expect  alist of item objects, each validated using PurchaseItemSerializer
     payment_method = serializers.ChoiceField(choices=Order.PAYMENT_METHODS)
+    customer_id = serializers.IntegerField(required=False, allow_null=True)
     items = PurchaseItemSerializer(many=True)
+    is_quote = serializers.BooleanField(required=False, default=False)
 
 class InventoryAdjustmentSerializer(serializers.Serializer):
     barcode = serializers.CharField()
@@ -90,11 +97,12 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     cashier_name = serializers.CharField(source='cashier.username')
+    customer_name = serializers.CharField(source='customer.name', allow_null=True, read_only=True)
     items = OrderItemSerializer(many=True)
 
     class Meta:
         model = Order
-        fields = ['id', 'created_at', 'total_amount', 'payment_method', 'status', 'cashier_name', 'items']
+        fields = ['id', 'created_at', 'total_amount', 'payment_method', 'status', 'cashier_name', 'customer_name', 'items']
 
 class InventoryLogSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='variant.product.name', read_only=True)
@@ -136,3 +144,35 @@ class CreateUserSerializer(serializers.ModelSerializer):
         user.groups.add(group)
         
         return user
+    
+class CustomerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Customer
+        fields = '__all__'
+
+class StocktakeItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='variant.product.name', read_only=True)
+    sku = serializers.CharField(source='variant.sku', read_only=True)
+    barcode = serializers.CharField(source='variant.barcode', read_only=True)
+
+    class Meta:
+        model = StocktakeItem
+        fields = ['id', 'variant', 'product_name', 'sku', 'barcode', 'expected_quantity', 'counted_quantity']
+
+class StocktakeSessionSerializer(serializers.ModelSerializer):
+    items = StocktakeItemSerializer(many=True, read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = StocktakeSession
+        fields = ['id', 'status', 'note', 'created_at', 'completed_at', 'created_by_name', 'items']
+
+class StoreSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StoreSettings
+        fields = '__all__'
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = '__all__'

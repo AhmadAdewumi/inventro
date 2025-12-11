@@ -1,6 +1,9 @@
 import random
+
 from django.core.management.base import BaseCommand
+
 from inventory.models import Product, ProductVariant
+
 
 class Command(BaseCommand): #-- django manages this class and helps loading it using manage.py because  we inherited from BaseCommand
     help = 'Populates the DB with dummy products' #--help text shown when someone runs `python manage.py help seed_products`

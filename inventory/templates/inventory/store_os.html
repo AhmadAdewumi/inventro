@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventro OS</title>
-    
-    <!-- CORE LIBRARIES -->
+
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -13,25 +12,23 @@
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-    
-    <!-- TOAST NOTIFICATIONS -->
+
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
     <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
 
-    <!-- CONFIG -->
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a' },
-                        slate: { 850: '#1e293b', 900: '#0f172a' }
+                        brand: {50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a'},
+                        slate: {850: '#1e293b', 900: '#0f172a'}
                     },
-                    animation: { 'fade-in': 'fadeIn 0.3s ease-out' },
+                    animation: {'fade-in': 'fadeIn 0.3s ease-out'},
                     keyframes: {
                         fadeIn: {
-                            '0%': { opacity: '0', transform: 'translateY(5px)' },
-                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                            '0%': {opacity: '0', transform: 'translateY(5px)'},
+                            '100%': {opacity: '1', transform: 'translateY(0)'},
                         }
                     }
                 }
@@ -39,721 +36,1718 @@
         }
     </script>
     <style>
-        .scroller::-webkit-scrollbar { width: 6px; height: 6px; }
-        .scroller::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-        body { background-color: #f8fafc; }
-        /* Hide default scanner elements just in case */
-        #reader video { object-fit: cover; width: 100%; height: 100%; border-radius: 0 0 1rem 1rem; }
+        .scroller::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .scroller::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        body {
+            background-color: #f8fafc;
+        }
+        #reader video {
+            object-fit: cover;
+            width: 100%;
+            height: 100%;
+            border-radius: 0 0 1rem 1rem;
+        }
+        /* Mobile specific adjustments */
+        @media (max-width: 768px) {
+            .scroller::-webkit-scrollbar { width: 4px; height: 4px; }
+        }
     </style>
 </head>
 <body>
-    <div id="root"></div>
+<div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo, Component } = React;
+<script type="text/babel">
+    const {useState, useEffect, useRef, useMemo, Component} = React;
 
-        // --- ERROR BOUNDARY ---
-        class ErrorBoundary extends Component {
-            constructor(props) { super(props); this.state = { hasError: false, error: null }; }
-            static getDerivedStateFromError(error) { return { hasError: true, error }; }
-            componentDidCatch(error, errorInfo) { console.error("React Error:", error, errorInfo); }
-            render() {
-                if (this.state.hasError) {
-                    return (
-                        <div className="p-10 flex flex-col items-center justify-center h-screen text-center">
-                            <h1 className="text-3xl font-bold text-red-600 mb-4">System Error</h1>
-                            <p className="text-slate-600 mb-4">Something went wrong while rendering the interface.</p>
-                            <pre className="bg-slate-100 p-4 rounded text-left text-xs font-mono overflow-auto max-w-2xl border border-red-200 text-red-800">
-                                {this.state.error && this.state.error.toString()}
-                            </pre>
-                            <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-slate-800 text-white rounded hover:bg-slate-700">Reload Page</button>
-                        </div>
-                    );
-                }
-                return this.props.children; 
-            }
+    // --- ERROR BOUNDARY ---
+    class ErrorBoundary extends Component {
+        constructor(props) {
+            super(props);
+            this.state = {hasError: false, error: null};
         }
 
-        // --- UTILS ---
-        const notify = (msg, type='success') => {
-            Toastify({ text: msg, duration: 3000, gravity: "top", position: "right", className: type === 'error' ? "bg-red-500" : "bg-emerald-500", style: { borderRadius: "8px", boxShadow: "0 4px 6px rgba(0,0,0,0.1)", fontWeight: "bold" } }).showToast();
-        };
+        static getDerivedStateFromError(error) {
+            return {hasError: true, error};
+        }
 
-        const api = {
-            get: async (endpoint) => {
-                const res = await fetch(`/api/${endpoint}`);
-                if (res.status === 401) window.location.href = '/login/';
-                const text = await res.text();
-                try { return JSON.parse(text); } catch { console.error("API Error Text:", text); throw new Error("Server Error (Invalid JSON)"); }
-            },
-            post: async (endpoint, body) => {
-                const res = await fetch(`/api/${endpoint}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-                    body: JSON.stringify(body)
-                });
-                const text = await res.text();
-                try {
-                    const json = JSON.parse(text);
-                    if (!res.ok) {
-                        const errorMsg = json.error || 
-                                       (json.username ? `Username: ${json.username[0]}` : null) || 
-                                       (json.password ? `Password: ${json.password[0]}` : null) ||
-                                       (json.detail ? json.detail : 'Request failed');
-                        throw new Error(errorMsg);
-                    }
-                    return json;
-                } catch (e) { 
-                    if (e.message.includes("Request failed") || !text.startsWith('{')) {
-                        console.error("API Error HTML:", text);
-                        throw new Error(e.message || "Server Error");
-                    }
-                    throw e;
-                }
-            },
-            download: (endpoint) => window.location.href = `/api/${endpoint}`
-        };
+        componentDidCatch(error, errorInfo) {
+            console.error("React Error:", error, errorInfo);
+        }
 
-        function getCookie(name) { let v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)'); return v ? v[2] : null; }
-        
-        const CountUp = ({ end, prefix = "" }) => { 
-            const [count, setCount] = useState(0); 
-            useEffect(() => { 
-                let start = 0; const step = end / 60; 
-                const timer = setInterval(() => { 
-                    start += step; 
-                    if (start >= end) { setCount(end); clearInterval(timer); } else setCount(start); 
-                }, 16); 
-                return () => clearInterval(timer); 
-            }, [end]); 
-            const safeCount = isNaN(count) ? 0 : count;
-            return <span>{prefix}{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeCount)}</span>; 
-        };
-        
-        const formatCurrency = (n) => {
-            if (n === undefined || n === null || isNaN(n)) return "₦0.00";
-            return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(n);
-        };
-
-        const formatDate = (d) => {
-            try { return new Date(d).toLocaleDateString() + ' ' + new Date(d).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); }
-            catch { return "Invalid Date"; }
-        };
-
-        // --- COMPONENTS ---
-        const Card = ({ children, className = "", noBg=false }) => <div className={`rounded-xl shadow-sm border border-slate-200 p-6 ${noBg ? '' : 'bg-white'} ${className}`}>{children}</div>;
-        const DarkCard = ({ children, className = "" }) => <div className={`rounded-xl shadow-sm border border-slate-800 p-6 bg-slate-900 text-white ${className}`}>{children}</div>;
-        
-        const Button = ({ children, onClick, variant="primary", className="", disabled=false, ...props }) => {
-            const styles = {
-                primary: "bg-brand-600 text-white hover:bg-brand-500 shadow-md",
-                ghost: "bg-transparent text-slate-600 hover:bg-slate-100",
-                danger: "bg-red-500 text-white hover:bg-red-400 shadow-md",
-                success: "bg-emerald-600 text-white hover:bg-emerald-500 shadow-md",
-                purple: "bg-purple-600 text-white hover:bg-purple-500 shadow-md",
-                dark: "bg-slate-800 text-white hover:bg-slate-700 shadow-md"
-            };
-            return <button type={props.type || "button"} onClick={onClick} disabled={disabled} className={`px-4 py-2 rounded-lg font-medium transition-all active:scale-95 flex items-center justify-center gap-2 ${styles[variant]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`} {...props}>{children}</button>;
-        };
-        const Input = ({ label, className="", ...props }) => ( <div className={`flex flex-col gap-1 ${className}`}><label className="text-xs font-bold text-slate-500 uppercase tracking-wide">{label}</label><input className="w-full p-2.5 rounded-lg border border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none transition-all" {...props} /></div> );
-        const StatusBadge = ({ status }) => { const styles = { completed: "bg-emerald-100 text-emerald-700 border-emerald-200", refunded: "bg-red-100 text-red-700 border-red-200", pending: "bg-amber-100 text-amber-700 border-amber-200", received: "bg-blue-100 text-blue-700 border-blue-200", draft: "bg-slate-100 text-slate-600" }; return <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border border-opacity-20 ${styles[status] || styles.draft}`}>{status}</span>; };
-        
-        const Pagination = ({ total, page, setPage, perPage=10 }) => {
-            const pages = Math.ceil(total / perPage);
-            if (pages <= 1) return null;
-            return (
-                <div className="flex justify-center gap-4 mt-4 items-center bg-slate-50 p-2 rounded-lg inline-flex mx-auto">
-                    <button disabled={page===1} onClick={()=>setPage(p=>p-1)} className="p-1 rounded hover:bg-white disabled:opacity-30 text-slate-600 transition"><i className="ph ph-caret-left text-lg"></i></button>
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Page {page} of {pages}</span>
-                    <button disabled={page===pages} onClick={()=>setPage(p=>p+1)} className="p-1 rounded hover:bg-white disabled:opacity-30 text-slate-600 transition"><i className="ph ph-caret-right text-lg"></i></button>
-                </div>
-            )
-        };
-
-        // --- CAMERA COMPONENT (CUSTOM UI) ---
-        const CameraModal = ({ onScan, onClose }) => {
-            const scannerRef = useRef(null);
-
-            useEffect(() => {
-                // Use Html5Qrcode class (not Scanner) for custom UI control
-                const html5QrCode = new Html5Qrcode("reader");
-                scannerRef.current = html5QrCode;
-
-                const config = { fps: 15, qrbox: { width: 250, height: 150 }, aspectRatio: 1.0 };
-                
-                html5QrCode.start(
-                    { facingMode: "environment" }, 
-                    config, 
-                    (decodedText) => {
-                        html5QrCode.stop().then(() => {
-                            html5QrCode.clear();
-                            onScan(decodedText);
-                        }).catch(err => console.error("Stop failed", err));
-                    },
-                    (errorMessage) => {
-                        // parse error, ignore
-                    }
-                ).catch(err => {
-                    console.error("Start failed", err);
-                    notify("Camera failed. Use HTTPS or localhost.", 'error');
-                    onClose();
-                });
-
-                return () => {
-                    if (scannerRef.current) {
-                        try {
-                            if (scannerRef.current.isScanning) {
-                                scannerRef.current.stop().then(() => scannerRef.current.clear());
-                            } else {
-                                scannerRef.current.clear();
-                            }
-                        } catch (e) { console.error("Cleanup error", e); }
-                    }
-                };
-            }, []);
-
-            return (
-                <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl overflow-hidden w-full max-w-sm animate-fade-in relative shadow-2xl">
-                        <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                            <h3 className="font-bold text-slate-700 flex items-center gap-2"><i className="ph ph-scan text-brand-600"></i> Scan Barcode</h3>
-                            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><i className="ph ph-x text-lg"></i></button>
-                        </div>
-                        <div className="p-0 bg-black relative h-[300px] flex items-center justify-center overflow-hidden">
-                            <div id="reader" className="w-full h-full"></div>
-                            
-                            {/* Custom Overlay Guidelines (Red Laser) */}
-                            <div className="absolute inset-0 pointer-events-none border-2 border-brand-500/30 m-8 rounded-lg"></div>
-                            <div className="absolute top-1/2 left-8 right-8 h-0.5 bg-red-500 shadow-[0_0_8px_red] z-10 opacity-80 animate-pulse"></div>
-                            
-                            <div className="absolute bottom-4 left-0 right-0 text-center text-white/90 text-xs pointer-events-none font-bold z-10 drop-shadow-md">
-                                Align barcode with the red line
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // --- PAGES ---
-
-        const Dashboard = ({ onNavigate }) => {
-            const [stats, setStats] = useState(null);
-            const chartRef = useRef(null);
-            const chartInstance = useRef(null);
-
-            useEffect(() => { 
-                api.get('reports/dashboard/').then(data => {
-                    setStats(data);
-                    setTimeout(() => {
-                        if(chartRef.current && typeof Chart !== 'undefined') {
-                            if(chartInstance.current) chartInstance.current.destroy();
-                            chartInstance.current = new Chart(chartRef.current, {
-                                type: 'line',
-                                data: {
-                                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                                    datasets: [{
-                                        label: 'Revenue',
-                                        data: [1200, 1500, 900, 1400, 1100, 800, data.revenue || 0], 
-                                        borderColor: '#2563eb', 
-                                        backgroundColor: (ctx) => {
-                                            const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 200);
-                                            gradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
-                                            gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
-                                            return gradient;
-                                        },
-                                        fill: true, 
-                                        tension: 0.4, 
-                                        pointRadius: 4, 
-                                        pointHoverRadius: 6
-                                    }]
-                                },
-                                options: { 
-                                    responsive: true, 
-                                    maintainAspectRatio: false,
-                                    plugins: { legend: {display: false} }, 
-                                    scales: { y: { beginAtZero: true, grid: { borderDash: [2, 4] } }, x: { grid: { display: false } } } 
-                                }
-                            });
-                        }
-                    }, 50);
-                }); 
-                return () => { if(chartInstance.current) chartInstance.current.destroy(); }
-            }, []);
-
-            if (!stats) return <div className="p-10 text-slate-400 flex items-center gap-2"><i className="ph ph-spinner animate-spin"></i> Loading...</div>;
-
-            return (
-                <div className="space-y-6 animate-fade-in h-full flex flex-col pb-4">
-                    <header className="flex justify-between items-end"><div><h1 className="text-3xl font-bold text-slate-800 tracking-tight">Overview</h1><p className="text-slate-500">Store performance for {stats.date}</p></div></header>
-                    <div className="grid grid-cols-3 gap-6">
-                        <Card className="border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform duration-300"><div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Revenue</div><div className="text-4xl font-bold text-slate-800"><CountUp end={stats.revenue || 0} prefix="₦" /></div></Card>
-                        <Card className={`border-l-4 ${stats.profit>=0?'border-l-brand-500':'border-l-red-500'} group hover:-translate-y-1 transition-transform duration-300`}><div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Net Profit</div><div className={`text-4xl font-bold ${stats.profit>=0?'text-brand-600':'text-red-600'}`}><CountUp end={stats.profit || 0} prefix="₦" /></div></Card>
-                        <Card className="border-l-4 border-l-orange-500 group hover:-translate-y-1 transition-transform duration-300"><div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Low Stock</div><div className="text-4xl font-bold text-orange-500">{stats.low_stock_items || 0}</div></Card>
-                    </div>
-                    <div className="grid grid-cols-3 gap-6 flex-grow">
-                        <Card className="col-span-2 flex flex-col min-h-[300px]"><h3 className="font-bold text-slate-700 mb-4">Revenue Trend</h3><div className="flex-grow relative"><canvas ref={chartRef}></canvas></div></Card>
-                        <DarkCard className="flex flex-col justify-center gap-4 relative overflow-hidden">
-                            <h3 className="font-bold text-slate-300 z-10">Quick Actions</h3>
-                            <button onClick={()=>onNavigate('inventory', true)} className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer"><i className="ph ph-plus-circle text-2xl text-brand-400"></i> <span className="font-medium">Add Product</span></button>
-                            <button onClick={()=>onNavigate('procurement', true)} className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer"><i className="ph ph-truck text-2xl text-emerald-400"></i> <span className="font-medium">Create Purchase Order</span></button>
-                            <button onClick={()=>api.download('print-labels/')} className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer"><i className="ph ph-printer text-2xl text-orange-400"></i> <span className="font-medium">Print Labels</span></button>
-                            <i className="ph ph-lightning absolute -bottom-6 -right-6 text-9xl opacity-5"></i>
-                        </DarkCard>
-                    </div>
-                </div>
-            );
-        };
-
-        const InventoryManager = ({ openModalOnLoad }) => {
-            const [products, setProducts] = useState([]);
-            const [selected, setSelected] = useState([]);
-            const [search, setSearch] = useState("");
-            const [showModal, setShowModal] = useState(openModalOnLoad || false);
-            const [page, setPage] = useState(1);
-            const PER_PAGE = 10;
-            
-            useEffect(() => { loadProducts(); }, [search]);
-
-            const loadProducts = () => {
-                const query = search ? `?search=${search}` : '';
-                api.get(`products/${query}`).then(res => { setProducts(res); setPage(1); setSelected([]); });
-            }
-
-            const paginatedProducts = useMemo(() => {
-                const start = (page - 1) * PER_PAGE;
-                return products.slice(start, start + PER_PAGE);
-            }, [products, page]);
-
-            const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-            const toggleAll = () => setSelected(prev => prev.length === products.length ? [] : products.map(p => p.id));
-
-            const handlePrint = () => {
-                const query = selected.length > 0 ? `?ids=${selected.join(',')}` : '';
-                api.download(`print-labels/${query}`);
-                notify(selected.length > 0 ? `Downloading ${selected.length} Labels...` : "Downloading All Labels...");
-            };
-
-            const AddProductModal = () => {
-                const [form, setForm] = useState({ name: '', category: '', price: '', cost: '', stock: '', barcode: '', sku: '' });
-                const [loading, setLoading] = useState(false);
-                const [showCamera, setShowCamera] = useState(false);
-
-                const handleSubmit = async (e) => {
-                    e.preventDefault(); setLoading(true);
-                    try { await api.post('products/', form); setShowModal(false); loadProducts(); notify("Product Created!"); } 
-                    catch(err) { notify(err.message, 'error'); } finally { setLoading(false); }
-                };
-
+        render() {
+            if (this.state.hasError) {
                 return (
-                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-                        {showCamera && <CameraModal onScan={(code)=>{setForm({...form, barcode: code}); setShowCamera(false); notify("Scanned!");}} onClose={()=>setShowCamera(false)} />}
-                        <div className="bg-white p-8 rounded-2xl w-96 shadow-2xl">
-                            <h2 className="text-2xl font-bold mb-6 text-slate-800">New Product</h2>
-                            <form onSubmit={handleSubmit} className="space-y-4">
-                                <Input label="Name" required onChange={e=>setForm({...form, name: e.target.value})} placeholder="e.g. Nike Shirt" />
-                                <div className="grid grid-cols-2 gap-3"><Input label="Category" required onChange={e=>setForm({...form, category: e.target.value})} /><Input label="SKU" required onChange={e=>setForm({...form, sku: e.target.value})} /></div>
-                                <div className="grid grid-cols-2 gap-3"><Input label="Sell Price" type="number" required onChange={e=>setForm({...form, price: e.target.value})} /><Input label="Cost Price" type="number" required onChange={e=>setForm({...form, cost: e.target.value})} /></div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <Input label="Stock" type="number" required onChange={e=>setForm({...form, stock: e.target.value})} />
-                                    <div className="flex items-end gap-2">
-                                        <Input label="Barcode" required value={form.barcode} onChange={e=>setForm({...form, barcode: e.target.value})} className="flex-grow" />
-                                        <Button variant="dark" onClick={()=>setShowCamera(true)} className="px-3"><i className="ph ph-camera text-xl"></i></Button>
-                                    </div>
-                                </div>
-                                <div className="flex gap-3 mt-6 pt-2"><Button type="button" variant="ghost" className="w-full" onClick={()=>setShowModal(false)}>Cancel</Button><Button type="submit" disabled={loading} className="w-full">Create</Button></div>
-                            </form>
-                        </div>
+                    <div className="p-10 flex flex-col items-center justify-center h-screen text-center">
+                        <h1 className="text-3xl font-bold text-red-600 mb-4">System Error</h1>
+                        <p className="text-slate-600 mb-4">Something went wrong while rendering the interface.</p>
+                        <pre
+                            className="bg-slate-100 p-4 rounded text-left text-xs font-mono overflow-auto max-w-2xl border border-red-200 text-red-800">
+                                {this.state.error && this.state.error.toString()}
+                            </pre>
+                        <button onClick={() => window.location.reload()}
+                                className="mt-6 px-6 py-2 bg-slate-800 text-white rounded hover:bg-slate-700">Reload
+                            Page
+                        </button>
                     </div>
                 );
-            };
+            }
+            return this.props.children;
+        }
+    }
 
-            return (
-                <div className="h-full flex flex-col gap-6 animate-fade-in">
-                    {showModal && <AddProductModal />}
-                    <div className="flex justify-between items-center"><h1 className="text-2xl font-bold text-slate-800">Inventory</h1>
-                        <div className="flex gap-3"><div className="relative"><i className="ph ph-magnifying-glass absolute left-3 top-3 text-slate-400"></i><input placeholder="Search products..." className="pl-10 pr-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-brand-500 w-64 transition-all" value={search} onChange={e=>setSearch(e.target.value)} /></div>
-                        <Button variant="dark" onClick={handlePrint} disabled={products.length === 0}><i className="ph ph-printer"></i> {selected.length > 0 ? `Print (${selected.length})` : 'Print All'}</Button>
-                        <Button onClick={()=>setShowModal(true)}><i className="ph ph-plus"></i> Add Product</Button></div>
+    // --- UTILS ---
+    const notify = (msg, type = 'success') => {
+        Toastify({
+            text: msg,
+            duration: 3000,
+            gravity: "top",
+            position: "right",
+            className: type === 'error' ? "bg-red-500" : "bg-emerald-500",
+            style: {borderRadius: "8px", boxShadow: "0 4px 6px rgba(0,0,0,0.1)", fontWeight: "bold"}
+        }).showToast();
+    };
+
+    const api = {
+        get: async (endpoint) => {
+            const res = await fetch(`/api/${endpoint}`);
+            if (res.status === 401) window.location.href = '/login/';
+            const text = await res.text();
+            try {
+                return JSON.parse(text);
+            } catch {
+                console.error("API Error Text:", text);
+                throw new Error("Server Error (Invalid JSON)");
+            }
+        },
+        post: async (endpoint, body) => {
+            const res = await fetch(`/api/${endpoint}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+                body: JSON.stringify(body)
+            });
+            const text = await res.text();
+            try {
+                const json = JSON.parse(text);
+                if (!res.ok) {
+                    const errorMsg = json.error ||
+                        (json.username ? `Username: ${json.username[0]}` : null) ||
+                        (json.password ? `Password: ${json.password[0]}` : null) ||
+                        (json.detail ? json.detail : 'Request failed');
+                    throw new Error(errorMsg);
+                }
+                return json;
+            } catch (e) {
+                if (e.message.includes("Request failed") || !text.startsWith('{')) {
+                    console.error("API Error HTML:", text);
+                    throw new Error(e.message || "Server Error");
+                }
+                throw e;
+            }
+        },
+        put: async (endpoint, body) => {
+            const res = await fetch(`/api/${endpoint}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+                body: JSON.stringify(body)
+            });
+            const text = await res.text();
+            try {
+                const json = JSON.parse(text);
+                if (!res.ok) throw new Error(json.error || 'Request failed');
+                return json;
+            } catch (e) {
+                throw new Error(e.message || "Server Error");
+            }
+        },
+        download: (endpoint) => window.location.href = `/api/${endpoint}`
+    };
+
+    function getCookie(name) {
+        let v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+        return v ? v[2] : null;
+    }
+
+    const CountUp = ({end, prefix = ""}) => {
+        const [count, setCount] = useState(0);
+        useEffect(() => {
+            let start = 0;
+            const step = end / 60;
+            const timer = setInterval(() => {
+                start += step;
+                if (start >= end) {
+                    setCount(end);
+                    clearInterval(timer);
+                } else setCount(start);
+            }, 16);
+            return () => clearInterval(timer);
+        }, [end]);
+        const safeCount = isNaN(count) ? 0 : count;
+        return <span>{prefix}{new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(safeCount)}</span>;
+    };
+
+    const formatCurrency = (n) => {
+        if (n === undefined || n === null || isNaN(n)) return "₦0.00";
+        return new Intl.NumberFormat('en-NG', {style: 'currency', currency: 'NGN'}).format(n);
+    };
+
+    const formatDate = (d) => {
+        try {
+            return new Date(d).toLocaleDateString() + ' ' + new Date(d).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch {
+            return "Invalid Date";
+        }
+    };
+
+    // --- COMPONENTS ---
+    const Card = ({children, className = "", noBg = false}) => <div
+        className={`rounded-xl shadow-sm border border-slate-200 p-6 ${noBg ? '' : 'bg-white'} ${className}`}>{children}</div>;
+    const DarkCard = ({children, className = ""}) => <div
+        className={`rounded-xl shadow-sm border border-slate-800 p-6 bg-slate-900 text-white ${className}`}>{children}</div>;
+
+    const Button = ({children, onClick, variant = "primary", className = "", disabled = false, ...props}) => {
+        const styles = {
+            primary: "bg-brand-600 text-white hover:bg-brand-500 shadow-md",
+            ghost: "bg-transparent text-slate-600 hover:bg-slate-100",
+            danger: "bg-red-500 text-white hover:bg-red-400 shadow-md",
+            success: "bg-emerald-600 text-white hover:bg-emerald-500 shadow-md",
+            purple: "bg-purple-600 text-white hover:bg-purple-500 shadow-md",
+            dark: "bg-slate-800 text-white hover:bg-slate-700 shadow-md"
+        };
+        return <button type={props.type || "button"} onClick={onClick} disabled={disabled}
+                       className={`px-4 py-2 rounded-lg font-medium transition-all active:scale-95 flex items-center justify-center gap-2 ${styles[variant]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`} {...props}>{children}</button>;
+    };
+    const Input = ({label, className = "", ...props}) => (<div className={`flex flex-col gap-1 ${className}`}><label
+        className="text-xs font-bold text-slate-500 uppercase tracking-wide">{label}</label><input
+        className="w-full p-2.5 rounded-lg border border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none transition-all" {...props} />
+    </div>);
+    const StatusBadge = ({status}) => {
+        const styles = {
+            completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+            refunded: "bg-red-100 text-red-700 border-red-200",
+            pending: "bg-amber-100 text-amber-700 border-amber-200",
+            received: "bg-blue-100 text-blue-700 border-blue-200",
+            draft: "bg-slate-100 text-slate-600"
+        };
+        return <span
+            className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border border-opacity-20 ${styles[status] || styles.draft}`}>{status}</span>;
+    };
+
+    const Pagination = ({total, page, setPage, perPage = 10}) => {
+        const pages = Math.ceil(total / perPage);
+        if (pages <= 1) return null;
+        return (
+            <div className="flex justify-center gap-4 mt-4 items-center bg-slate-50 p-2 rounded-lg inline-flex mx-auto">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
+                        className="p-1 rounded hover:bg-white disabled:opacity-30 text-slate-600 transition"><i
+                    className="ph ph-caret-left text-lg"></i></button>
+                <span
+                    className="text-xs font-bold text-slate-500 uppercase tracking-wider">Page {page} of {pages}</span>
+                <button disabled={page === pages} onClick={() => setPage(p => p + 1)}
+                        className="p-1 rounded hover:bg-white disabled:opacity-30 text-slate-600 transition"><i
+                    className="ph ph-caret-right text-lg"></i></button>
+            </div>
+        )
+    };
+
+    // --- CAMERA COMPONENT ---
+    const CameraModal = ({onScan, onClose}) => {
+        const scannerRef = useRef(null);
+        useEffect(() => {
+            const html5QrCode = new Html5Qrcode("reader");
+            scannerRef.current = html5QrCode;
+            const config = {fps: 15, qrbox: {width: 250, height: 150}, aspectRatio: 1.0};
+            html5QrCode.start({facingMode: "environment"}, config, (decodedText) => {
+                    html5QrCode.stop().then(() => {
+                        html5QrCode.clear();
+                        onScan(decodedText);
+                    }).catch(err => console.error("Stop failed", err));
+                }, (errorMessage) => {
+                }
+            ).catch(err => {
+                console.error("Start failed", err);
+                notify("Camera failed. Use HTTPS or localhost.", 'error');
+                onClose();
+            });
+            return () => {
+                if (scannerRef.current) {
+                    try {
+                        if (scannerRef.current.isScanning) {
+                            scannerRef.current.stop().then(() => scannerRef.current.clear());
+                        } else {
+                            scannerRef.current.clear();
+                        }
+                    } catch (e) {
+                        console.error("Cleanup error", e);
+                    }
+                }
+            };
+        }, []);
+
+        return (
+            <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+                <div
+                    className="bg-white rounded-2xl overflow-hidden w-full max-w-sm animate-fade-in relative shadow-2xl">
+                    <div className="p-4 border-b flex justify-between items-center bg-slate-50"><h3
+                        className="font-bold text-slate-700 flex items-center gap-2"><i
+                        className="ph ph-scan text-brand-600"></i> Scan Barcode</h3>
+                        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><i
+                            className="ph ph-x text-lg"></i></button>
+                    </div>
+                    <div className="p-0 bg-black relative h-[300px] flex items-center justify-center overflow-hidden">
+                        <div id="reader" className="w-full h-full"></div>
+                        <div
+                            className="absolute inset-0 pointer-events-none border-2 border-brand-500/30 m-8 rounded-lg"></div>
+                        <div
+                            className="absolute top-1/2 left-8 right-8 h-0.5 bg-red-500 shadow-[0_0_8px_red] z-10 opacity-80 animate-pulse"></div>
+                        <div
+                            className="absolute bottom-4 left-0 right-0 text-center text-white/90 text-xs pointer-events-none font-bold z-10 drop-shadow-md">Align
+                            barcode with the red line
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // --- SUB COMPONENTS (EXTRACTED) ---
+    const ProductDetailPanel = ({product, onClose}) => {
+        const [history, setHistory] = useState([]);
+        const [loading, setLoading] = useState(true);
+        useEffect(() => {
+            api.get(`logs/?variant_id=${product.id}`).then(setHistory).finally(() => setLoading(false));
+        }, [product]);
+        return (
+            <Card
+                className="h-full flex flex-col border-l-4 border-l-brand-500 animate-fade-in shadow-2xl relative z-20">
+                <div className="flex justify-between items-start mb-4 border-b pb-4">
+                    <div><h2 className="text-xl font-bold text-slate-800">{product.product_name}</h2><p
+                        className="text-sm text-slate-500 font-mono">{product.sku} • {product.barcode}</p></div>
+                    <Button variant="ghost" onClick={onClose}><i className="ph ph-x text-lg"></i></Button></div>
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                    <div className="bg-slate-50 p-2 rounded border text-center">
+                        <div className="text-[10px] uppercase text-slate-400 font-bold">Stock</div>
+                        <div
+                            className={`text-xl font-bold ${product.stock_quantity < 10 ? 'text-red-500' : 'text-slate-700'}`}>{product.stock_quantity}</div>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded border text-center">
+                        <div className="text-[10px] uppercase text-slate-400 font-bold">Price</div>
+                        <div className="text-xl font-bold text-slate-700">{formatCurrency(product.price)}</div>
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded border text-center">
+                        <div className="text-[10px] uppercase text-slate-400 font-bold">Cost (Avg)</div>
+                        <div className="text-xl font-bold text-slate-700">{formatCurrency(product.cost_price)}</div>
+                    </div>
+                </div>
+                <h3 className="font-bold text-sm text-slate-700 mb-2 uppercase tracking-wider">Movement History</h3>
+                <div className="flex-grow overflow-auto border rounded-lg bg-slate-50">
+                    {loading ? <div className="p-4 text-center text-slate-400">Loading history...</div> : (
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-100 font-bold border-b sticky top-0">
+                            <tr>
+                                <th className="p-2">Date</th>
+                                <th className="p-2">Action</th>
+                                <th className="p-2 text-right">Qty</th>
+                                <th className="p-2 text-right">Bal</th>
+                            </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">{history.map(log => (
+                                <tr key={log.id} className="hover:bg-white">
+                                    <td className="p-2 text-slate-500">{formatDate(log.created_at)}</td>
+                                    <td className="p-2 uppercase font-bold text-[10px]">{log.action}</td>
+                                    <td className={`p-2 text-right font-bold ${log.quantity_change > 0 ? 'text-green-600' : 'text-red-500'}`}>{log.quantity_change > 0 ? '+' : ''}{log.quantity_change}</td>
+                                    <td className="p-2 text-right text-slate-400 font-mono">{log.stock_after}</td>
+                                </tr>))}{history.length === 0 && <tr>
+                                <td colSpan="4" className="p-4 text-center text-slate-400 italic">No history found</td>
+                            </tr>}</tbody>
+                        </table>
+                    )}
+                </div>
+            </Card>
+        );
+    };
+
+    const AddProductModal = ({onClose, onSuccess}) => {
+        const [form, setForm] = useState({
+            name: '',
+            category: '',
+            price: '',
+            cost: '',
+            stock: '',
+            barcode: '',
+            sku: '',
+            tax_rate: '0'
+        });
+        const [loading, setLoading] = useState(false);
+        const [showCamera, setShowCamera] = useState(false);
+        const handleSubmit = async (e) => {
+            e.preventDefault();
+            setLoading(true);
+            try {
+                await api.post('products/', form);
+                onSuccess();
+                notify("Product Created!");
+            } catch (err) {
+                notify(err.message, 'error');
+            } finally {
+                setLoading(false);
+            }
+        };
+        return (
+            <div
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+                {showCamera && <CameraModal onScan={(code) => {
+                    setForm({...form, barcode: code});
+                    setShowCamera(false);
+                    notify("Scanned!");
+                }} onClose={() => setShowCamera(false)}/>}
+                <div className="bg-white p-8 rounded-2xl w-96 shadow-2xl">
+                    <h2 className="text-2xl font-bold mb-6 text-slate-800">New Product</h2>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <Input label="Name" required onChange={e => setForm({...form, name: e.target.value})}
+                               placeholder="e.g. Nike Shirt"/>
+                        <div className="grid grid-cols-2 gap-3"><Input label="Category" required
+                                                                       onChange={e => setForm({
+                                                                           ...form,
+                                                                           category: e.target.value
+                                                                       })}/><Input label="SKU" required
+                                                                                   onChange={e => setForm({
+                                                                                       ...form,
+                                                                                       sku: e.target.value
+                                                                                   })}/></div>
+                        <div className="grid grid-cols-2 gap-3"><Input label="Sell Price" type="number" required
+                                                                       onChange={e => setForm({
+                                                                           ...form,
+                                                                           price: e.target.value
+                                                                       })}/><Input label="Cost Price" type="number"
+                                                                                   required onChange={e => setForm({
+                            ...form,
+                            cost: e.target.value
+                        })}/></div>
+                        <div className="grid grid-cols-2 gap-3"><Input label="Stock" type="number" required
+                                                                       onChange={e => setForm({
+                                                                           ...form,
+                                                                           stock: e.target.value
+                                                                       })}/>
+                            <div className="flex items-end gap-2"><Input label="Barcode" required value={form.barcode}
+                                                                         onChange={e => setForm({
+                                                                             ...form,
+                                                                             barcode: e.target.value
+                                                                         })} className="flex-grow"/><Button
+                                variant="dark" onClick={() => setShowCamera(true)} className="px-3"><i
+                                className="ph ph-camera text-xl"></i></Button></div>
+                        </div>
+                        <Input label="Tax Rate (%)" type="number" step="0.01"
+                               onChange={e => setForm({...form, tax_rate: e.target.value})} placeholder="0.00"/>
+                        <div className="flex gap-3 mt-6 pt-2"><Button type="button" variant="ghost" className="w-full"
+                                                                      onClick={onClose}>Cancel</Button><Button
+                            type="submit" disabled={loading} className="w-full">Create</Button></div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
+    const AddStaffModal = ({onClose, onSuccess}) => {
+        const [form, setForm] = useState({username: '', password: '', role: 'Cashier'});
+        const submit = async (e) => {
+            e.preventDefault();
+            try {
+                await api.post('staff/', form);
+                onSuccess();
+                notify("Staff Created!");
+            } catch (e) {
+                notify(e.message, 'error');
+            }
+        };
+        return (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fade-in">
+                <div className="bg-white p-8 rounded-2xl w-96 shadow-2xl"><h2
+                    className="text-2xl font-bold mb-6 text-slate-800">New Staff</h2>
+                    <form onSubmit={submit} className="space-y-4"><Input label="Username" required
+                                                                         onChange={e => setForm({
+                                                                             ...form,
+                                                                             username: e.target.value
+                                                                         })}/><Input label="Password" type="password"
+                                                                                     required onChange={e => setForm({
+                        ...form,
+                        password: e.target.value
+                    })}/>
+                        <div className="flex flex-col gap-1"><label
+                            className="text-xs font-bold text-slate-500 uppercase tracking-wide">Role</label><select
+                            className="w-full p-2.5 rounded-lg border border-slate-300 focus:border-brand-500 outline-none bg-white"
+                            onChange={e => setForm({...form, role: e.target.value})}>
+                            <option value="Cashier">Cashier</option>
+                            <option value="Manager">Manager</option>
+                        </select></div>
+                        <div className="flex gap-3 mt-6 pt-2"><Button type="button" variant="ghost" className="w-full"
+                                                                      onClick={onClose}>Cancel</Button><Button
+                            type="submit" className="w-full">Create</Button></div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
+    const AddSupplierModal = ({onClose, onSuccess}) => {
+        const [form, setForm] = useState({name: '', contact_person: '', email: ''});
+        const submit = async (e) => {
+            e.preventDefault();
+            try {
+                await api.post('suppliers/', form);
+                onSuccess();
+                notify("Supplier Added");
+            } catch (e) {
+                notify(e.message, 'error');
+            }
+        };
+        return (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+                <div className="bg-white p-6 rounded-xl w-96 animate-fade-in"><h2 className="text-xl font-bold mb-4">New
+                    Supplier</h2>
+                    <form onSubmit={submit} className="space-y-3"><Input label="Company Name" required
+                                                                         onChange={e => setForm({
+                                                                             ...form,
+                                                                             name: e.target.value
+                                                                         })}/><Input label="Contact Person"
+                                                                                     onChange={e => setForm({
+                                                                                         ...form,
+                                                                                         contact_person: e.target.value
+                                                                                     })}/><Input label="Email"
+                                                                                                 type="email"
+                                                                                                 onChange={e => setForm({
+                                                                                                     ...form,
+                                                                                                     email: e.target.value
+                                                                                                 })}/>
+                        <div className="flex gap-2 mt-4"><Button type="button" variant="ghost" className="w-full"
+                                                                 onClick={onClose}>Cancel</Button><Button type="submit"
+                                                                                                          className="w-full">Save</Button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )
+    };
+
+    const AddCustomerModal = ({onClose, onSuccess}) => {
+        const [form, setForm] = useState({name: '', phone: '', email: '', address: ''});
+        const submit = async (e) => {
+            e.preventDefault();
+            try {
+                await api.post('customers/', form);
+                onSuccess();
+                notify("Customer Added!");
+            } catch (e) {
+                notify(e.message, 'error');
+            }
+        };
+        return (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fade-in">
+                <div className="bg-white p-8 rounded-2xl w-96 shadow-2xl"><h2
+                    className="text-xl font-bold mb-4 text-slate-800">Add Customer</h2>
+                    <form onSubmit={submit} className="space-y-3"><Input label="Name" required onChange={e => setForm({
+                        ...form,
+                        name: e.target.value
+                    })}/><Input label="Phone" required onChange={e => setForm({...form, phone: e.target.value})}/><Input
+                        label="Email" type="email" onChange={e => setForm({...form, email: e.target.value})}/><Input
+                        label="Address" onChange={e => setForm({...form, address: e.target.value})}/>
+                        <div className="flex gap-2 mt-4"><Button type="button" variant="ghost" className="w-full"
+                                                                 onClick={onClose}>Cancel</Button><Button type="submit"
+                                                                                                          className="w-full">Save</Button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
+    // --- COMPONENT: NOTIFICATION HUB ---
+    const NotificationHub = () => {
+        const [notifs, setNotifs] = useState([]);
+        const [show, setShow] = useState(false);
+
+        // Poll for notifications every 30 seconds
+        useEffect(() => {
+            const fetchNotifs = () => api.get('notifications/').then(setNotifs).catch(e => console.error(e));
+            fetchNotifs();
+            const interval = setInterval(fetchNotifs, 30000);
+            return () => clearInterval(interval);
+        }, []);
+
+        const markRead = (id) => {
+            api.put(`notifications/${id}/read/`, {}).then(() => setNotifs(n => n.filter(x => x.id !== id)));
+        };
+
+        return (
+            <div className="relative z-50">
+                <button onClick={() => setShow(!show)}
+                        className="relative p-2 text-slate-400 hover:text-white transition-colors">
+                    <i className="ph ph-bell text-xl"></i>
+                    {notifs.length > 0 && <span
+                        className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-900 animate-pulse"></span>}
+                </button>
+                {show && (
+                    <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShow(false)}></div>
+                        <div
+                            className="absolute left-10 bottom-0 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden text-slate-800 animate-fade-in">
+                            <div
+                                className="p-3 border-b bg-slate-50 font-bold text-xs text-slate-500 uppercase flex justify-between items-center">
+                                <span>Notifications</span>
+                                <span
+                                    className="bg-slate-200 px-2 py-0.5 rounded-full text-[10px]">{notifs.length}</span>
+                            </div>
+                            <div className="max-h-80 overflow-y-auto scroller">
+                                {notifs.length === 0 ? (
+                                    <div className="p-6 text-center text-slate-400 text-sm italic">No new alerts</div>
+                                ) : (
+                                    notifs.map(n => (
+                                        <div key={n.id}
+                                             className="p-3 border-b hover:bg-brand-50 cursor-pointer transition-colors group"
+                                             onClick={() => markRead(n.id)}>
+                                            <div
+                                                className="font-bold text-sm text-slate-700 group-hover:text-brand-700">{n.title}</div>
+                                            <div
+                                                className="text-xs text-slate-500 mt-1 leading-relaxed">{n.message}</div>
+                                            <div
+                                                className="text-[10px] text-slate-300 mt-2 text-right">{new Date(n.created_at).toLocaleTimeString()}</div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    };
+
+    // --- UPDATED: DASHBOARD (Responsive) ---
+    const Dashboard = ({onNavigate}) => {
+        const [stats, setStats] = useState(null);
+        const chartRef = useRef(null);
+        const chartInstance = useRef(null);
+
+        useEffect(() => {
+            api.get('reports/dashboard/').then(data => {
+                setStats(data);
+                setTimeout(() => {
+                    if (chartRef.current && typeof Chart !== 'undefined') {
+                        if (chartInstance.current) chartInstance.current.destroy();
+                        chartInstance.current = new Chart(chartRef.current, {
+                            type: 'line',
+                            data: {
+                                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                datasets: [{
+                                    label: 'Revenue',
+                                    data: [1200, 1500, 900, 1400, 1100, 800, data.revenue || 0],
+                                    borderColor: '#2563eb',
+                                    backgroundColor: (ctx) => {
+                                        const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 200);
+                                        gradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
+                                        gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
+                                        return gradient;
+                                    },
+                                    fill: true,
+                                    tension: 0.4,
+                                    pointRadius: 4,
+                                    pointHoverRadius: 6
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {legend: {display: false}},
+                                scales: {
+                                    y: {beginAtZero: true, grid: {borderDash: [2, 4]}},
+                                    x: {grid: {display: false}}
+                                }
+                            }
+                        });
+                    }
+                }, 50);
+            });
+            return () => {
+                if (chartInstance.current) chartInstance.current.destroy();
+            }
+        }, []);
+
+        if (!stats) return <div className="p-10 text-slate-400 flex items-center gap-2"><i
+            className="ph ph-spinner animate-spin"></i> Loading...</div>;
+
+        return (
+            <div className="space-y-6 animate-fade-in h-full flex flex-col pb-4 overflow-y-auto scroller">
+                <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-2">
+                    <div><h1 className="text-3xl font-bold text-slate-800 tracking-tight">Overview</h1><p
+                        className="text-slate-500">Store performance for {stats.date}</p></div>
+                </header>
+                {/* Responsive Grid: 1 col on mobile, 3 on desktop */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Card
+                        className="border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform duration-300">
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Revenue</div>
+                        <div className="text-4xl font-bold text-slate-800"><CountUp end={stats.revenue || 0}
+                                                                                    prefix="₦"/></div>
+                    </Card>
+                    <Card
+                        className={`border-l-4 ${stats.profit >= 0 ? 'border-l-brand-500' : 'border-l-red-500'} group hover:-translate-y-1 transition-transform duration-300`}>
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Net Profit</div>
+                        <div className={`text-4xl font-bold ${stats.profit >= 0 ? 'text-brand-600' : 'text-red-600'}`}>
+                            <CountUp end={stats.profit || 0} prefix="₦"/></div>
+                    </Card>
+                    <Card
+                        className="border-l-4 border-l-orange-500 group hover:-translate-y-1 transition-transform duration-300">
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Low Stock</div>
+                        <div className="text-4xl font-bold text-orange-500">{stats.low_stock_items || 0}</div>
+                    </Card>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow">
+                    <Card className="col-span-1 md:col-span-2 flex flex-col min-h-[300px]"><h3
+                        className="font-bold text-slate-700 mb-4">Revenue Trend</h3>
+                        <div className="flex-grow relative min-h-[250px]">
+                            <canvas ref={chartRef}></canvas>
+                        </div>
+                    </Card>
+                    <div className="flex flex-col gap-6">
+                        <DarkCard className="flex flex-col justify-center gap-4 relative overflow-hidden flex-grow">
+                            <h3 className="font-bold text-slate-300 z-10">Quick Actions</h3>
+                            <button onClick={() => onNavigate('inventory', true)}
+                                    className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer">
+                                <i className="ph ph-plus-circle text-2xl text-brand-400"></i> <span
+                                className="font-medium">Add Product</span></button>
+                            <button onClick={() => onNavigate('procurement', true)}
+                                    className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer">
+                                <i className="ph ph-truck text-2xl text-emerald-400"></i> <span className="font-medium">Create Purchase Order</span>
+                            </button>
+                            <button onClick={() => api.download('print-labels/')}
+                                    className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer">
+                                <i className="ph ph-printer text-2xl text-orange-400"></i> <span
+                                className="font-medium">Print Labels</span></button>
+                            <i className="ph ph-lightning absolute -bottom-6 -right-6 text-9xl opacity-5"></i>
+                        </DarkCard>
+
+                        <Card className="flex flex-col gap-2">
+                            <h3 className="font-bold text-slate-700 text-xs uppercase mb-2">Reports & Data</h3>
+                            <button onClick={() => api.download('export/sales/')}
+                                    className="w-full flex items-center gap-2 p-2 hover:bg-slate-50 rounded text-slate-600 text-sm transition">
+                                <i className="ph ph-file-csv text-green-600 text-lg"></i> Sales Ledger (CSV)
+                            </button>
+                            <button onClick={() => api.download('export/inventory/')}
+                                    className="w-full flex items-center gap-2 p-2 hover:bg-slate-50 rounded text-slate-600 text-sm transition">
+                                <i className="ph ph-file-csv text-blue-600 text-lg"></i> Inventory Value (CSV)
+                            </button>
+                            <button onClick={() => api.download('backup/')}
+                                    className="w-full flex items-center gap-2 p-2 hover:bg-slate-50 rounded text-slate-600 text-sm transition">
+                                <i className="ph ph-database text-orange-600 text-lg"></i> Download Backup (JSON)
+                            </button>
+                        </Card>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // --- UPDATED: INVENTORY MANAGER (Responsive) ---
+    const InventoryManager = ({openModalOnLoad}) => {
+        const [products, setProducts] = useState([]);
+        const [selected, setSelected] = useState([]);
+        const [search, setSearch] = useState("");
+        const [showModal, setShowModal] = useState(openModalOnLoad || false);
+        const [page, setPage] = useState(1);
+        const [activeProduct, setActiveProduct] = useState(null);
+        const PER_PAGE = 10;
+
+        useEffect(() => { loadProducts(); }, [search]);
+
+        const loadProducts = () => {
+            const query = search ? `?search=${search}` : '';
+            api.get(`products/${query}`).then(res => {
+                setProducts(res);
+                setPage(1);
+                setSelected([]);
+            });
+        }
+
+        const paginatedProducts = useMemo(() => {
+            const start = (page - 1) * PER_PAGE;
+            return products.slice(start, start + PER_PAGE);
+        }, [products, page]);
+
+        const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+        const toggleAll = () => setSelected(prev => prev.length === products.length ? [] : products.map(p => p.id));
+
+        const handlePrint = () => {
+            const query = selected.length > 0 ? `?ids=${selected.join(',')}` : '';
+            api.download(`print-labels/${query}`);
+            notify(selected.length > 0 ? `Downloading ${selected.length} Labels...` : "Downloading All Labels...");
+        };
+
+        return (
+            <div className="h-full flex flex-col md:flex-row gap-6 animate-fade-in relative">
+                {showModal && <AddProductModal onClose={() => setShowModal(false)} onSuccess={() => {
+                    setShowModal(false);
+                    loadProducts();
+                }}/>}
+
+                <div className={`${activeProduct ? 'hidden md:block md:w-1/2' : 'w-full'} transition-all duration-300 flex flex-col gap-4 h-full`}>
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <h1 className="text-2xl font-bold text-slate-800">Inventory</h1>
+                        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                            <div className="relative flex-grow md:flex-grow-0">
+                                <i className="ph ph-magnifying-glass absolute left-3 top-3 text-slate-400"></i>
+                                <input placeholder="Search products..."
+                                className="pl-10 pr-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-brand-500 w-full md:w-48 transition-all"
+                                value={search} onChange={e => setSearch(e.target.value)}/>
+                            </div>
+                            <Button variant="dark" onClick={handlePrint} disabled={products.length === 0}><i className="ph ph-printer"></i></Button>
+                            <Button onClick={() => setShowModal(true)}><i className="ph ph-plus"></i> New</Button>
+                        </div>
                     </div>
                     <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
                         <div className="overflow-auto scroller h-full">
-                            <table className="w-full text-left text-sm">
+                            <table className="w-full text-left text-sm min-w-[600px]"> {/* min-w forces scroll on mobile */}
                                 <thead className="bg-slate-50 font-bold border-b text-slate-500 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="p-4 w-10 text-center"><input type="checkbox" className="w-4 h-4 rounded cursor-pointer" onChange={toggleAll} checked={products.length > 0 && selected.length === products.length} /></th>
-                                        <th className="p-4">Product</th><th className="p-4">SKU</th><th className="p-4">Barcode</th><th className="p-4 text-right">Cost</th><th className="p-4 text-right">Price</th><th className="p-4 text-right">Stock</th>
-                                    </tr>
+                                <tr>
+                                    <th className="p-4 w-10 text-center"><input type="checkbox" className="w-4 h-4 rounded cursor-pointer" onChange={toggleAll} checked={products.length > 0 && selected.length === products.length}/></th>
+                                    <th className="p-4">Product</th>
+                                    <th className="p-4">SKU</th>
+                                    <th className="p-4">Barcode</th>
+                                    <th className="p-4 text-right">Price</th>
+                                    <th className="p-4 text-right">Stock</th>
+                                    <th className="p-4"></th>
+                                </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white">
-                                    {paginatedProducts.map(p=>(
-                                        <tr key={p.id} className={`hover:bg-slate-50 transition-colors ${selected.includes(p.id) ? 'bg-blue-50' : ''}`}>
-                                            <td className="p-4 text-center"><input type="checkbox" className="w-4 h-4 rounded cursor-pointer" checked={selected.includes(p.id)} onChange={()=>toggleSelect(p.id)} /></td>
-                                            <td className="p-4 font-medium text-slate-700">{p.product_name} <span className="text-slate-400 text-xs block">{p.name_suffix}</span></td>
-                                            <td className="p-4 font-mono text-xs text-slate-500">{p.sku}</td>
-                                            <td className="p-4 font-mono text-xs bg-slate-50 w-min rounded px-2 py-1">{p.barcode}</td>
-                                            <td className="p-4 text-right text-slate-400">{formatCurrency(p.cost_price)}</td>
-                                            <td className="p-4 text-right font-bold text-slate-700">{formatCurrency(p.price)}</td>
-                                            <td className={`p-4 text-right font-bold ${p.stock_quantity<10?'text-red-500':'text-emerald-600'}`}>{p.stock_quantity}</td>
-                                        </tr>
-                                    ))}
+                                <tbody className="divide-y divide-slate-100 bg-white">{paginatedProducts.map(p => (
+                                    <tr key={p.id} onClick={() => setActiveProduct(p)}
+                                        className={`hover:bg-slate-50 transition-colors cursor-pointer ${activeProduct?.id === p.id ? 'bg-blue-50' : ''} ${p.stock_quantity < 10 ? 'bg-red-50/50' : ''}`}>
+                                        <td className="p-4 text-center" onClick={e => e.stopPropagation()}><input type="checkbox" className="w-4 h-4 rounded cursor-pointer" checked={selected.includes(p.id)} onChange={() => toggleSelect(p.id)}/></td>
+                                        <td className="p-4 font-medium text-slate-700">{p.product_name} <span className="text-slate-400 text-xs block">{p.name_suffix}</span>{parseFloat(p.tax_rate) > 0 && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded mt-1 inline-block">TAX {p.tax_rate}%</span>}</td>
+                                        <td className="p-4 font-mono text-xs text-slate-500">{p.sku}</td>
+                                        <td className="p-4 font-mono text-xs bg-slate-50 w-min rounded px-2 py-1">{p.barcode}</td>
+                                        <td className="p-4 text-right font-bold text-slate-700">{formatCurrency(p.price)}</td>
+                                        <td className={`p-4 text-right font-bold ${p.stock_quantity < 10 ? 'text-red-500' : 'text-emerald-600'}`}>{p.stock_quantity}</td>
+                                        <td className="p-4 text-right"><i className="ph ph-caret-right text-slate-400"></i></td>
+                                    </tr>))}
                                 </tbody>
                             </table>
                         </div>
-                        <div className="border-t p-2 bg-slate-50"><Pagination total={products.length} page={page} setPage={setPage} perPage={PER_PAGE} /></div>
+                        <div className="border-t p-2 bg-slate-50"><Pagination total={products.length} page={page} setPage={setPage} perPage={PER_PAGE}/></div>
+                    </Card>
+                </div>
+                {activeProduct && (
+                    <div className="fixed inset-0 z-50 md:static md:z-0 md:w-1/2 h-full bg-white md:bg-transparent">
+                         {/* Back button for mobile only */}
+                        <div className="md:hidden p-4 border-b flex items-center gap-2" onClick={() => setActiveProduct(null)}>
+                            <i className="ph ph-arrow-left text-xl"></i> <span className="font-bold">Back to List</span>
+                        </div>
+                        <div className="h-full p-4 md:p-0">
+                            <ProductDetailPanel product={activeProduct} onClose={() => setActiveProduct(null)}/>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const Procurement = ({openCreateOnLoad}) => {
+        const [pos, setPos] = useState([]);
+        const [suppliers, setSuppliers] = useState([]);
+        const [view, setView] = useState(openCreateOnLoad ? 'create_po' : 'list');
+        useEffect(() => {
+            loadData();
+        }, []);
+        const loadData = () => {
+            api.get('po/list/').then(setPos);
+            api.get('suppliers/').then(setSuppliers);
+        };
+        const receivePO = async (id) => {
+            if (!confirm("Receive stock? Values will be updated.")) return;
+            try {
+                await api.post(`po/${id}/receive/`, {});
+                notify("Stock Received & Updated!");
+                loadData();
+            } catch (e) {
+                notify(e.message, 'error');
+            }
+        };
+        const CreatePO = () => {
+            const [form, setForm] = useState({supplier_id: '', items: []});
+            const [line, setLine] = useState({variant_id: '', qty: '', cost: ''});
+            const [variants, setVariants] = useState([]);
+            useEffect(() => {
+                api.get('products/').then(setVariants);
+            }, []);
+            const addLine = () => {
+                if (!line.variant_id) return notify("Select a product", 'error');
+                setForm(p => ({
+                    ...p,
+                    items: [...p.items, {
+                        variant_id: line.variant_id,
+                        quantity: parseInt(line.qty),
+                        cost: parseFloat(line.cost)
+                    }]
+                }));
+                setLine({variant_id: '', qty: '', cost: ''});
+            };
+            const submit = async () => {
+                try {
+                    await api.post('po/create/', form);
+                    notify("PO Created!");
+                    setView('list');
+                    loadData();
+                } catch (e) {
+                    notify(e.message, 'error');
+                }
+            };
+            return (
+                <div className="flex flex-col h-full gap-4 animate-fade-in">
+                    <div className="flex items-center gap-2"><Button variant="ghost" onClick={() => setView('list')}><i
+                        className="ph ph-arrow-left"></i> Back</Button><h2 className="text-xl font-bold">New Purchase
+                        Order</h2></div>
+                    <Card className="flex-grow flex flex-col gap-4">
+                        <div className="flex gap-4 items-end">
+                            <div className="flex-grow"><label
+                                className="text-xs font-bold uppercase text-slate-500">Supplier</label><select
+                                className="w-full p-2.5 bg-slate-50 border rounded-lg mt-1"
+                                onChange={e => setForm({...form, supplier_id: e.target.value})}>
+                                <option>Select Supplier</option>
+                                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                        </div>
+                        <div className="bg-slate-50 p-4 rounded-xl border grid grid-cols-4 gap-3 items-end">
+                            <div className="col-span-2"><label
+                                className="text-xs font-bold uppercase text-slate-500">Product</label><select
+                                className="w-full p-2 border rounded mt-1" value={line.variant_id}
+                                onChange={e => setLine({...line, variant_id: e.target.value})}>
+                                <option>Select Product</option>
+                                {variants.map(v => <option key={v.id} value={v.id}>{v.product_name} ({v.sku})</option>)}
+                            </select></div>
+                            <div><label className="text-xs font-bold uppercase text-slate-500">Qty</label><input
+                                type="number" className="w-full p-2 border rounded mt-1" value={line.qty}
+                                onChange={e => setLine({...line, qty: e.target.value})}/></div>
+                            <div><label className="text-xs font-bold uppercase text-slate-500">Unit Cost</label><input
+                                type="number" className="w-full p-2 border rounded mt-1" value={line.cost}
+                                onChange={e => setLine({...line, cost: e.target.value})}/></div>
+                            <Button onClick={addLine} variant="dark" className="col-span-4 mt-2">Add Line Item</Button>
+                        </div>
+                        <div className="flex-grow overflow-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 text-slate-500">
+                                <tr>
+                                    <th className="p-3">Item ID</th>
+                                    <th className="p-3">Qty</th>
+                                    <th className="p-3">Cost</th>
+                                </tr>
+                                </thead>
+                                <tbody>{form.items.map((i, idx) => <tr key={idx} className="border-b">
+                                    <td className="p-3">{i.variant_id}</td>
+                                    <td className="p-3">{i.quantity}</td>
+                                    <td className="p-3">{formatCurrency(i.cost)}</td>
+                                </tr>)}</tbody>
+                            </table>
+                        </div>
+                        <Button onClick={submit} className="w-full py-3">Confirm & Create PO</Button>
                     </Card>
                 </div>
             );
         };
+        if (view === 'create_po') return <CreatePO/>;
+        return (
+            <div className="h-full flex flex-col gap-6 animate-fade-in">
+                {view === 'add_supplier' && <AddSupplierModal onClose={() => setView('list')} onSuccess={() => {
+                    setView('list');
+                    loadData();
+                }}/>}
+                <div className="flex justify-between items-center"><h1
+                    className="text-2xl font-bold text-slate-800">Procurement</h1>
+                    <div className="flex gap-2"><Button variant="ghost" onClick={() => setView('add_supplier')}><i
+                        className="ph ph-user-plus"></i> New Supplier</Button><Button
+                        onClick={() => setView('create_po')}><i className="ph ph-plus"></i> New PO</Button></div>
+                </div>
+                <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
+                    <div className="overflow-auto scroller">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500">
+                            <tr>
+                                <th className="p-4">PO #</th>
+                                <th className="p-4">Supplier</th>
+                                <th className="p-4">Status</th>
+                                <th className="p-4 text-right">Total Cost</th>
+                                <th className="p-4"></th>
+                            </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">{pos.map(p => <tr key={p.id}
+                                                                                           className="hover:bg-slate-50 transition-colors">
+                                <td className="p-4 font-mono font-bold text-brand-600">#{p.id}</td>
+                                <td className="p-4 font-medium">{p.supplier_name}</td>
+                                <td className="p-4"><StatusBadge status={p.status}/></td>
+                                <td className="p-4 text-right font-mono text-slate-600 font-bold">{formatCurrency(p.total_cost)}</td>
+                                <td className="p-4 text-right">{p.status === 'draft' &&
+                                    <Button size="sm" variant="success" onClick={() => receivePO(p.id)}
+                                            className="text-xs py-1">Receive Stock</Button>}</td>
+                            </tr>)}</tbody>
+                        </table>
+                    </div>
+                </Card>
+            </div>
+        );
+    };
 
-        const Procurement = ({ openCreateOnLoad }) => {
-            const [pos, setPos] = useState([]);
-            const [suppliers, setSuppliers] = useState([]);
-            const [view, setView] = useState(openCreateOnLoad ? 'create_po' : 'list');
+    const AuditLogs = () => {
+        const [logs, setLogs] = useState([]);
+        useEffect(() => {
+            api.get('logs/').then(setLogs);
+        }, []);
+        return (
+            <div className="h-full flex flex-col gap-4 animate-fade-in"><h1
+                className="text-2xl font-bold text-slate-800">Audit Trail</h1><Card
+                className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
+                <div className="overflow-auto scroller">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500">
+                        <tr>
+                            <th className="p-4">Time</th>
+                            <th className="p-4">Action</th>
+                            <th className="p-4">User</th>
+                            <th className="p-4">Product</th>
+                            <th className="p-4 text-right">Change</th>
+                            <th className="p-4">Note</th>
+                        </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">{logs.map(l => <tr key={l.id}
+                                                                                        className="hover:bg-slate-50">
+                            <td className="p-4 text-slate-400 text-xs font-mono">{formatDate(l.created_at)}</td>
+                            <td className="p-4 uppercase font-bold text-xs tracking-wider">{l.action}</td>
+                            <td className="p-4"><span
+                                className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{l.user_name}</span></td>
+                            <td className="p-4 font-medium">{l.product_name}</td>
+                            <td className={`p-4 text-right font-mono font-bold ${l.quantity_change > 0 ? 'text-emerald-600' : 'text-red-500'}`}>{l.quantity_change > 0 ? '+' : ''}{l.quantity_change}</td>
+                            <td className="p-4 text-slate-500 italic text-xs">{l.note}</td>
+                        </tr>)}</tbody>
+                    </table>
+                </div>
+            </Card></div>
+        );
+    };
 
-            useEffect(() => { loadData(); }, []);
-            const loadData = () => { api.get('po/list/').then(setPos); api.get('suppliers/').then(setSuppliers); };
+    const StaffManager = () => {
+        const [staff, setStaff] = useState([]);
+        const [showModal, setShowModal] = useState(false);
+        useEffect(() => {
+            loadStaff();
+        }, []);
+        const loadStaff = () => api.get('staff/').then(setStaff);
+        const toggleStatus = async (id) => {
+            if (!confirm("Change status?")) return;
+            try {
+                await api.post(`staff/${id}/toggle/`, {});
+                loadStaff();
+                notify("Status Updated");
+            } catch (e) {
+                notify(e.message, 'error');
+            }
+        };
+        return (
+            <div className="h-full flex flex-col gap-6 animate-fade-in">
+                {showModal && <AddStaffModal onClose={() => setShowModal(false)} onSuccess={() => {
+                    setShowModal(false);
+                    loadStaff();
+                }}/>}
+                <div className="flex justify-between items-center"><h1
+                    className="text-2xl font-bold text-slate-800">Staff Management</h1><Button
+                    onClick={() => setShowModal(true)}><i className="ph ph-user-plus"></i> Add Staff</Button></div>
+                <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
+                    <div className="overflow-auto scroller">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 font-bold border-b text-slate-500 sticky top-0 z-10">
+                            <tr>
+                                <th className="p-4">Username</th>
+                                <th className="p-4">Role</th>
+                                <th className="p-4">Joined</th>
+                                <th className="p-4">Status</th>
+                                <th className="p-4">Action</th>
+                            </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">{staff.map(u => (
+                                <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                                    <td className="p-4 font-bold text-slate-700">{u.username}</td>
+                                    <td className="p-4"><span
+                                        className={`px-2 py-1 rounded text-xs font-bold uppercase ${u.role === 'Manager' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role}</span>
+                                    </td>
+                                    <td className="p-4 text-slate-500">{formatDate(u.date_joined)}</td>
+                                    <td className="p-4"><StatusBadge status={u.is_active ? 'completed' : 'canceled'}/>
+                                    </td>
+                                    <td className="p-4"><Button size="sm" variant="ghost"
+                                                                onClick={() => toggleStatus(u.id)}
+                                                                className={u.is_active ? "text-red-500 hover:bg-red-50" : "text-green-600 hover:bg-green-50"}>{u.is_active ? "Deactivate" : "Activate"}</Button>
+                                    </td>
+                                </tr>))}</tbody>
+                        </table>
+                    </div>
+                </Card>
+            </div>
+        );
+    };
 
-            const receivePO = async (id) => { if(!confirm("Receive stock? Values will be updated.")) return; try { await api.post(`po/${id}/receive/`, {}); notify("Stock Received & Updated!"); loadData(); } catch(e){ notify(e.message, 'error'); } };
+    const CustomerManager = () => {
+        const [customers, setCustomers] = useState([]);
+        const [search, setSearch] = useState("");
+        const [showModal, setShowModal] = useState(false);
+        useEffect(() => {
+            loadCustomers();
+        }, [search]);
+        const loadCustomers = () => {
+            const query = search ? `?search=${search}` : '';
+            api.get(`customers/${query}`).then(setCustomers);
+        };
+        return (
+            <div className="h-full flex flex-col gap-6 animate-fade-in">
+                {showModal && <AddCustomerModal onClose={() => setShowModal(false)} onSuccess={() => {
+                    setShowModal(false);
+                    loadCustomers();
+                }}/>}
+                <div className="flex justify-between items-center"><h1
+                    className="text-2xl font-bold text-slate-800">Customers</h1>
+                    <div className="flex gap-2">
+                        <div className="relative"><i
+                            className="ph ph-magnifying-glass absolute left-3 top-3 text-slate-400"></i><input
+                            placeholder="Search customers..."
+                            className="pl-10 pr-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-brand-500 w-64 transition-all"
+                            value={search} onChange={e => setSearch(e.target.value)}/></div>
+                        <Button onClick={() => setShowModal(true)}><i className="ph ph-user-plus"></i> Add New</Button>
+                    </div>
+                </div>
+                <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
+                    <div className="overflow-auto scroller">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500">
+                            <tr>
+                                <th className="p-4">Name</th>
+                                <th className="p-4">Phone</th>
+                                <th className="p-4">Balance</th>
+                                <th className="p-4">Joined</th>
+                            </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">{customers.map(c => (
+                                <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                                    <td className="p-4 font-bold text-slate-700">{c.name}</td>
+                                    <td className="p-4 text-slate-500">{c.phone}</td>
+                                    <td className={`p-4 font-mono font-bold ${c.wallet_balance < 0 ? 'text-red-500' : 'text-emerald-600'}`}>{formatCurrency(c.wallet_balance)}</td>
+                                    <td className="p-4 text-slate-400">{formatDate(c.created_at)}</td>
+                                </tr>))}</tbody>
+                        </table>
+                    </div>
+                </Card>
+            </div>
+        );
+    };
 
-            const AddSupplierModal = ({ onClose }) => {
-                const [form, setForm] = useState({ name: '', contact_person: '', email: '' });
-                const submit = async (e) => { e.preventDefault(); try { await api.post('suppliers/', form); loadData(); onClose(); notify("Supplier Added"); } catch(e){ notify(e.message, 'error'); } };
-                return (
-                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"><div className="bg-white p-6 rounded-xl w-96 animate-fade-in"><h2 className="text-xl font-bold mb-4">New Supplier</h2><form onSubmit={submit} className="space-y-3"><Input label="Company Name" required onChange={e=>setForm({...form, name: e.target.value})} /><Input label="Contact Person" onChange={e=>setForm({...form, contact_person: e.target.value})} /><Input label="Email" type="email" onChange={e=>setForm({...form, email: e.target.value})} /><div className="flex gap-2 mt-4"><Button type="button" variant="ghost" className="w-full" onClick={onClose}>Cancel</Button><Button type="submit" className="w-full">Save</Button></div></form></div></div>
-                )
-            };
+    // --- COMPONENT: SETTINGS MANAGER ---
+    const SettingsManager = () => {
+        const [settings, setSettings] = useState({store_name: '', address: '', phone: '', email: ''});
+        const [loading, setLoading] = useState(false);
 
-            const CreatePO = () => {
-                const [form, setForm] = useState({ supplier_id: '', items: [] });
-                const [line, setLine] = useState({ variant_id: '', qty: '', cost: '' });
-                const [variants, setVariants] = useState([]);
-                // FIX: API now works, dropdown populates
-                useEffect(() => { api.get('products/').then(setVariants); }, []);
+        useEffect(() => {
+            api.get('settings/').then(setSettings);
+        }, []);
 
-                const addLine = () => {
-                    if(!line.variant_id) return notify("Select a product", 'error');
-                    setForm(p => ({...p, items: [...p.items, {variant_id: line.variant_id, quantity: parseInt(line.qty), cost: parseFloat(line.cost)}]}));
-                    setLine({variant_id: '', qty: '', cost: ''});
-                };
-                const submit = async () => { try { await api.post('po/create/', form); notify("PO Created!"); setView('list'); loadData(); } catch(e){ notify(e.message, 'error'); } };
+        const save = async () => {
+            setLoading(true);
+            try {
+                await api.post('settings/', settings);
+                notify("Settings Saved Successfully!");
+                if (onUpdate) onUpdate(settings);
+            } catch (e) {
+                notify(e.message, 'error');
+            } finally {
+                setLoading(false);
+            }
+        };
 
-                return (
-                    <div className="flex flex-col h-full gap-4 animate-fade-in">
-                        <div className="flex items-center gap-2"><Button variant="ghost" onClick={()=>setView('list')}><i className="ph ph-arrow-left"></i> Back</Button><h2 className="text-xl font-bold">New Purchase Order</h2></div>
-                        <Card className="flex-grow flex flex-col gap-4">
-                            <div className="flex gap-4 items-end"><div className="flex-grow"><label className="text-xs font-bold uppercase text-slate-500">Supplier</label><select className="w-full p-2.5 bg-slate-50 border rounded-lg mt-1" onChange={e=>setForm({...form, supplier_id: e.target.value})}><option>Select Supplier</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div></div>
-                            <div className="bg-slate-50 p-4 rounded-xl border grid grid-cols-4 gap-3 items-end">
-                                <div className="col-span-2"><label className="text-xs font-bold uppercase text-slate-500">Product</label><select className="w-full p-2 border rounded mt-1" value={line.variant_id} onChange={e=>setLine({...line, variant_id: e.target.value})}><option>Select Product</option>{variants.map(v=><option key={v.id} value={v.id}>{v.product_name} ({v.sku})</option>)}</select></div>
-                                <div><label className="text-xs font-bold uppercase text-slate-500">Qty</label><input type="number" className="w-full p-2 border rounded mt-1" value={line.qty} onChange={e=>setLine({...line, qty: e.target.value})} /></div>
-                                <div><label className="text-xs font-bold uppercase text-slate-500">Unit Cost</label><input type="number" className="w-full p-2 border rounded mt-1" value={line.cost} onChange={e=>setLine({...line, cost: e.target.value})} /></div>
-                                <Button onClick={addLine} variant="dark" className="col-span-4 mt-2">Add Line Item</Button>
+        return (
+            <div className="h-full flex flex-col gap-6 animate-fade-in">
+                <h1 className="text-2xl font-bold text-slate-800">Store Configuration</h1>
+                <div className="max-w-2xl">
+                    <Card className="flex flex-col gap-6 p-8">
+                        <div>
+                            <h3 className="font-bold text-slate-700 text-sm uppercase mb-1">Receipt Information</h3>
+                            <p className="text-xs text-slate-500">This information will appear on all customer
+                                receipts.</p>
+                        </div>
+                        <div className="space-y-4">
+                            <Input label="Store Name" value={settings.store_name}
+                                   onChange={e => setSettings({...settings, store_name: e.target.value})}/>
+                            <Input label="Address" value={settings.address}
+                                   onChange={e => setSettings({...settings, address: e.target.value})}/>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Input label="Phone Number" value={settings.phone}
+                                       onChange={e => setSettings({...settings, phone: e.target.value})}/>
+                                <Input label="Email (Optional)" value={settings.email}
+                                       onChange={e => setSettings({...settings, email: e.target.value})}/>
                             </div>
-                            <div className="flex-grow overflow-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-3">Item ID</th><th className="p-3">Qty</th><th className="p-3">Cost</th></tr></thead><tbody>{form.items.map((i,idx)=><tr key={idx} className="border-b"><td className="p-3">{i.variant_id}</td><td className="p-3">{i.quantity}</td><td className="p-3">{formatCurrency(i.cost)}</td></tr>)}</tbody></table></div>
-                            <Button onClick={submit} className="w-full py-3">Confirm & Create PO</Button>
-                        </Card>
-                    </div>
-                );
-            };
-
-            if(view === 'create_po') return <CreatePO />;
-
-            return (
-                <div className="h-full flex flex-col gap-6 animate-fade-in">
-                    {view === 'add_supplier' && <AddSupplierModal onClose={()=>setView('list')} />}
-                    <div className="flex justify-between items-center"><h1 className="text-2xl font-bold text-slate-800">Procurement</h1>
-                        <div className="flex gap-2"><Button variant="ghost" onClick={()=>setView('add_supplier')}><i className="ph ph-user-plus"></i> New Supplier</Button><Button onClick={()=>setView('create_po')}><i className="ph ph-plus"></i> New PO</Button></div>
-                    </div>
-                    <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md"><div className="overflow-auto scroller"><table className="w-full text-left text-sm"><thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500"><tr><th className="p-4">PO #</th><th className="p-4">Supplier</th><th className="p-4">Status</th><th className="p-4 text-right">Total Cost</th><th className="p-4"></th></tr></thead><tbody className="divide-y divide-slate-100">{pos.map(p=><tr key={p.id} className="hover:bg-slate-50 transition-colors"><td className="p-4 font-mono font-bold text-brand-600">#{p.id}</td><td className="p-4 font-medium">{p.supplier_name}</td><td className="p-4"><StatusBadge status={p.status}/></td><td className="p-4 text-right font-mono text-slate-600 font-bold">{formatCurrency(p.total_cost)}</td><td className="p-4 text-right">{p.status==='draft' && <Button size="sm" variant="success" onClick={()=>receivePO(p.id)} className="text-xs py-1">Receive Stock</Button>}</td></tr>)}</tbody></table></div></Card>
+                        </div>
+                        <div className="pt-4 border-t flex justify-end">
+                            <Button onClick={save} disabled={loading} className="w-32">
+                                {loading ? "Saving..." : "Save Changes"}
+                            </Button>
+                        </div>
+                    </Card>
                 </div>
-            );
+            </div>
+        );
+    };
+
+    // --- UPDATED: POS TERMINAL (Responsive) ---
+    const PosTerminal = () => {
+        const [input, setInput] = useState("");
+        const [scanQty, setScanQty] = useState(1);
+        const [cart, setCart] = useState(() => {
+            try { return JSON.parse(localStorage.getItem('pos_cart')) || [] } catch { return [] }
+        });
+        const [loading, setLoading] = useState(false);
+        const [showCamera, setShowCamera] = useState(false);
+        const [selectedCustomer, setSelectedCustomer] = useState(null);
+        const [customerSearch, setCustomerSearch] = useState("");
+        const [customers, setCustomers] = useState([]);
+        const inputRef = useRef(null);
+
+        useEffect(() => { localStorage.setItem('pos_cart', JSON.stringify(cart)); }, [cart]);
+        useEffect(() => { if (customerSearch.length > 2) api.get(`customers/?search=${customerSearch}`).then(setCustomers); else setCustomers([]); }, [customerSearch]);
+
+        const handleScan = async (code) => {
+            if (!code) return;
+            setLoading(true);
+            try {
+                const p = await api.get(`scan/${code}/`);
+                setCart(prev => {
+                    const ex = prev.find(x => x.barcode === p.barcode);
+                    return ex ? prev.map(x => x.barcode === p.barcode ? { ...x, qty: x.qty + scanQty } : x) : [...prev, {...p, qty: scanQty}];
+                });
+                setInput("");
+            } catch (e) { notify("Product Not Found", 'error'); } finally { setLoading(false); setTimeout(() => inputRef.current?.focus(), 50); }
         };
 
-        const AuditLogs = () => {
-            const [logs, setLogs] = useState([]);
-            useEffect(() => { api.get('logs/').then(setLogs); }, []);
-            return (
-                <div className="h-full flex flex-col gap-4 animate-fade-in"><h1 className="text-2xl font-bold text-slate-800">Audit Trail</h1><Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md"><div className="overflow-auto scroller"><table className="w-full text-left text-sm"><thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500"><tr><th className="p-4">Time</th><th className="p-4">Action</th><th className="p-4">User</th><th className="p-4">Product</th><th className="p-4 text-right">Change</th><th className="p-4">Note</th></tr></thead><tbody className="divide-y divide-slate-100">{logs.map(l=><tr key={l.id} className="hover:bg-slate-50"><td className="p-4 text-slate-400 text-xs font-mono">{formatDate(l.created_at)}</td><td className="p-4 uppercase font-bold text-xs tracking-wider">{l.action}</td><td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{l.user_name}</span></td><td className="p-4 font-medium">{l.product_name}</td><td className={`p-4 text-right font-mono font-bold ${l.quantity_change>0?'text-emerald-600':'text-red-500'}`}>{l.quantity_change>0?'+':''}{l.quantity_change}</td><td className="p-4 text-slate-500 italic text-xs">{l.note}</td></tr>)}</tbody></table></div></Card></div>
-            );
+        const checkout = async (method) => {
+            if (!cart.length) return;
+            if (method === 'debt' && !selectedCustomer) return notify("Select a customer for Debt payment", 'error');
+            if (method === 'none' && !confirm("Save as Quote? No payment will be recorded.")) return;
+            setLoading(true);
+            try {
+                const payload = {
+                    payment_method: method,
+                    items: cart.map(i => ({barcode: i.barcode, quantity: i.qty})),
+                    customer_id: selectedCustomer ? selectedCustomer.id : null,
+                    is_quote: method === 'none'
+                };
+                const res = await api.post('purchase/', payload);
+                if (method === 'none') {
+                    notify("Quote Saved Successfully!");
+                } else {
+                    notify(`Order #${res.order_id} Paid: ${formatCurrency(res.total)}`);
+                    const printUrl = `/print/receipt/${res.order_id}/`;
+                    window.open(printUrl, 'Receipt', 'width=400,height=600,scrollbars=yes');
+                }
+                setCart([]); setSelectedCustomer(null); setCustomerSearch("");
+            } catch (e) { notify(e.message, 'error'); } finally { setLoading(false); }
         };
 
-        const StaffManager = () => {
-            const [staff, setStaff] = useState([]);
-            const [showModal, setShowModal] = useState(false);
-            useEffect(() => { loadStaff(); }, []);
-            const loadStaff = () => api.get('staff/').then(setStaff);
-            const toggleStatus = async (id) => { if(!confirm("Change status?")) return; try { await api.post(`staff/${id}/toggle/`, {}); loadStaff(); notify("Status Updated"); } catch(e) { notify(e.message, 'error'); } };
+        const updateQty = (barcode, newQty) => {
+            if (newQty < 1) return;
+            setCart(cart.map(i => i.barcode === barcode ? {...i, qty: parseInt(newQty)} : i));
+        };
+        const total = cart.reduce((a, b) => a + (b.price * b.qty), 0);
 
-            const AddStaffModal = () => {
-                const [form, setForm] = useState({ username: '', password: '', role: 'Cashier' });
-                const submit = async (e) => { e.preventDefault(); try { await api.post('staff/', form); setShowModal(false); loadStaff(); notify("Staff Created!"); } catch(e) { notify(e.message, 'error'); } };
-                return (
-                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fade-in"><div className="bg-white p-8 rounded-2xl w-96 shadow-2xl">
-                        <h2 className="text-2xl font-bold mb-6 text-slate-800">New Staff</h2>
-                        <form onSubmit={submit} className="space-y-4">
-                            <Input label="Username" required onChange={e=>setForm({...form, username: e.target.value})} />
-                            <Input label="Password" type="password" required onChange={e=>setForm({...form, password: e.target.value})} />
-                            <div className="flex flex-col gap-1"><label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Role</label><select className="w-full p-2.5 rounded-lg border border-slate-300 focus:border-brand-500 outline-none bg-white" onChange={e=>setForm({...form, role: e.target.value})}><option value="Cashier">Cashier</option><option value="Manager">Manager</option></select></div>
-                            <div className="flex gap-3 mt-6 pt-2"><Button type="button" variant="ghost" className="w-full" onClick={()=>setShowModal(false)}>Cancel</Button><Button type="submit" className="w-full">Create</Button></div>
-                        </form>
-                    </div></div>
-                );
-            };
-
-            return (
-                <div className="h-full flex flex-col gap-6 animate-fade-in">
-                    {showModal && <AddStaffModal />}
-                    <div className="flex justify-between items-center"><h1 className="text-2xl font-bold text-slate-800">Staff Management</h1><Button onClick={()=>setShowModal(true)}><i className="ph ph-user-plus"></i> Add Staff</Button></div>
-                    <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md"><div className="overflow-auto scroller"><table className="w-full text-left text-sm"><thead className="bg-slate-50 font-bold border-b text-slate-500 sticky top-0 z-10"><tr><th className="p-4">Username</th><th className="p-4">Role</th><th className="p-4">Joined</th><th className="p-4">Status</th><th className="p-4">Action</th></tr></thead><tbody className="divide-y divide-slate-100 bg-white">{staff.map(u => (<tr key={u.id} className="hover:bg-slate-50 transition-colors"><td className="p-4 font-bold text-slate-700">{u.username}</td><td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold uppercase ${u.role==='Manager'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{u.role}</span></td><td className="p-4 text-slate-500">{formatDate(u.date_joined)}</td><td className="p-4"><StatusBadge status={u.is_active ? 'completed' : 'canceled'} /></td><td className="p-4"><Button size="sm" variant="ghost" onClick={()=>toggleStatus(u.id)} className={u.is_active ? "text-red-500 hover:bg-red-50" : "text-green-600 hover:bg-green-50"}>{u.is_active ? "Deactivate" : "Activate"}</Button></td></tr>))}</tbody></table></div></Card>
+        return (
+            <div className="h-full flex flex-col md:flex-row gap-6 animate-fade-in overflow-y-auto scroller pb-20 md:pb-0">
+                {showCamera && <CameraModal onScan={(c) => { setShowCamera(false); handleScan(c); notify("Scanned!"); }} onClose={() => setShowCamera(false)}/>}
+                <div className="flex-grow flex flex-col gap-4 min-h-[500px]">
+                    <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200 flex gap-4 items-center sticky top-0 z-20">
+                        <div className="flex flex-col gap-1 w-16 md:w-24"><label className="text-xs font-bold text-slate-400">QTY</label><input type="number" min="1" value={scanQty} onChange={e => setScanQty(Math.max(1, parseInt(e.target.value) || 1))} className="w-full text-xl font-bold text-center outline-none border-b-2 border-brand-500"/></div>
+                        <div className="h-10 w-px bg-slate-200 mx-2"></div>
+                        <i className="ph ph-barcode text-4xl text-slate-300 hidden md:block"></i>
+                        <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleScan(input.trim())} className="w-full text-lg md:text-2xl outline-none font-mono placeholder:text-slate-300" placeholder="Scan..." autoFocus/>
+                        <Button variant="dark" onClick={() => setShowCamera(true)} className="px-3 md:px-4 h-12"><i className="ph ph-camera text-xl"></i> <span className="hidden md:inline">Scan</span></Button>
+                    </div>
+                    <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
+                        <div className="p-4 bg-slate-50 border-b font-bold text-xs text-slate-500 uppercase flex tracking-wider">
+                            <span className="flex-grow">Item</span><span className="w-24 text-center">Qty</span><span className="w-20 text-right">Price</span><span className="w-10"></span></div>
+                        <div className="flex-grow overflow-auto p-2 space-y-1 bg-white min-h-[300px]">
+                            {cart.map(i => (
+                                <div key={i.barcode} className="flex items-center p-3 hover:bg-slate-50 rounded-lg group transition-colors">
+                                    <div className="flex-grow font-bold text-slate-700 text-sm">{i.product_name} <span className="block text-xs text-slate-400 font-normal">{i.sku}</span></div>
+                                    <div className="w-24 flex items-center justify-center gap-2">
+                                        <button onClick={() => updateQty(i.barcode, i.qty - 1)} className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">-</button>
+                                        <span className="w-6 text-center font-bold text-sm">{i.qty}</span>
+                                        <button onClick={() => updateQty(i.barcode, i.qty + 1)} className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">+</button>
+                                    </div>
+                                    <div className="w-20 text-right font-mono text-slate-600 text-sm">{formatCurrency(i.price * i.qty)}</div>
+                                    <button onClick={() => setCart(cart.filter(x => x.barcode !== i.barcode))} className="w-10 text-slate-300 hover:text-red-500"><i className="ph ph-trash text-xl"></i></button>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
                 </div>
-            );
+                <div className="w-full md:w-80 flex flex-col gap-4">
+                    <Card className="border-none shadow-xl bg-white">
+                        <div className="mb-4 relative">
+                            <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Customer (Optional)</label>
+                            {selectedCustomer ? (
+                                <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg flex justify-between items-center">
+                                    <div><div className="font-bold text-brand-700">{selectedCustomer.name}</div><div className="text-xs text-brand-500">{selectedCustomer.phone}</div></div>
+                                    <button onClick={() => { setSelectedCustomer(null); setCustomerSearch("") }} className="text-brand-400 hover:text-brand-600"><i className="ph ph-x-circle text-xl"></i></button>
+                                </div>
+                            ) : (
+                                <div>
+                                    <input className="w-full p-2 border rounded" placeholder="Search customer..." value={customerSearch} onChange={e => setCustomerSearch(e.target.value)}/>
+                                    {customers.length > 0 && (
+                                        <div className="absolute left-0 right-0 bg-white shadow-xl border rounded mt-1 z-50 max-h-48 overflow-auto">
+                                            {customers.map(c => (<div key={c.id} onClick={() => { setSelectedCustomer(c); setCustomers([]) }} className="p-2 hover:bg-slate-50 cursor-pointer border-b text-sm"><div className="font-bold">{c.name}</div><div className="text-xs text-slate-500">{c.phone}</div></div>))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="border-t pt-4">
+                            <div className="text-slate-400 text-xs font-bold uppercase tracking-widest">Total Due</div>
+                            <div className="text-4xl font-mono font-bold mt-1 tracking-tight text-slate-800">{formatCurrency(total)}</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-6">
+                            <Button onClick={() => checkout('cash')} disabled={!cart.length || loading} className="col-span-2 py-4 text-lg bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">CASH</Button>
+                            <Button onClick={() => checkout('card')} disabled={!cart.length || loading} className="py-3 bg-blue-600 hover:bg-blue-500">CARD</Button>
+                            <Button onClick={() => checkout('transfer')} disabled={!cart.length || loading} className="py-3 bg-purple-600 hover:bg-purple-500">TRANSFER</Button>
+                            {selectedCustomer && <Button onClick={() => checkout('debt')} disabled={!cart.length || loading} className="col-span-2 py-3 bg-slate-700 hover:bg-slate-600 border border-slate-600">PAY LATER (DEBT)</Button>}
+                            <Button onClick={() => checkout('none')} disabled={!cart.length || loading} className="col-span-2 py-2 bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200 text-xs uppercase font-bold tracking-wider mt-2"><i className="ph ph-file-text mr-2"></i> Save as Quote</Button>
+                        </div>
+                    </Card>
+                </div>
+            </div>
+        );
+    };
+
+    const OrderHistory = () => {
+        const [orders, setOrders] = useState([]);
+        const [selectedOrder, setSelectedOrder] = useState(null);
+        const [filter, setFilter] = useState('all');
+
+        useEffect(() => {
+            loadOrders();
+        }, [filter]);
+        const loadOrders = () => {
+            const q = filter !== 'all' ? `?status=${filter}` : '';
+            api.get(`orders/${q}`).then(setOrders);
         };
 
-        const PosTerminal = () => {
-            const [input, setInput] = useState("");
-            // FIX: scanQty persists until manually changed
-            const [scanQty, setScanQty] = useState(1);
-            const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('pos_cart')) || [] } catch { return [] } });
+        const FilterTab = ({id, label}) => <button onClick={() => setFilter(id)}
+                                                   className={`px-3 py-1 text-sm font-medium rounded-full transition-all ${filter === id ? 'bg-brand-600 text-white shadow' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{label}</button>;
+
+        const RefundPanel = ({order, onClose}) => {
+            const [refundData, setRefundData] = useState({});
             const [loading, setLoading] = useState(false);
+            useEffect(() => {
+                const initial = {};
+                order.items.forEach(i => initial[i.id] = {qty: 0, damaged: false});
+                setRefundData(initial);
+            }, [order]);
+            const handleQty = (id, v, max) => setRefundData(p => ({
+                ...p,
+                [id]: {...p[id], qty: Math.min(Math.max(0, parseInt(v) || 0), max)}
+            }));
+            const toggleDmg = (id) => setRefundData(p => ({...p, [id]: {...p[id], damaged: !p[id].damaged}}));
+            const submit = async () => {
+                const items = order.items.map(i => ({
+                    barcode: i.barcode,
+                    quantity: refundData[i.id]?.qty || 0,
+                    is_damaged: refundData[i.id]?.dmg || false
+                })).filter(i => i.quantity > 0);
+                if (!items.length) return notify("Select items to return", 'error');
+                setLoading(true);
+                try {
+                    await api.post('refund/', {order_id: order.id, items});
+                    notify("Refund Processed");
+                    onClose();
+                } catch (e) {
+                    notify(e.message, 'error');
+                } finally {
+                    setLoading(false);
+                }
+            };
+            const estTotal = order.items.reduce((a, i) => a + (parseFloat(i.unit_price) * (refundData[i.id]?.qty || 0)), 0);
+            return (
+                <Card className="h-full flex flex-col border-l-4 border-l-brand-500 animate-fade-in shadow-xl">
+                    <div className="flex justify-between items-start mb-4 border-b pb-4">
+                        <div><h2 className="text-xl font-bold">Order #{order.id}</h2><p
+                            className="text-sm text-slate-500">{formatDate(order.created_at)}</p></div>
+                        <Button variant="ghost" onClick={() => onClose(true)}><i
+                            className="ph ph-x text-lg"></i></Button></div>
+                    <div className="flex-grow overflow-auto space-y-3">
+                        {order.items.map(item => {
+                            const eligible = item.quantity - item.refunded_quantity;
+                            const cur = refundData[item.id] || {qty: 0};
+                            return (
+                                <div key={item.id}
+                                     className={`p-4 rounded-lg border transition-all ${eligible > 0 ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                                    <div className="flex justify-between mb-1"><span
+                                        className="font-bold text-slate-700">{item.product_name}</span><span
+                                        className="font-mono text-slate-500">{formatCurrency(item.unit_price)}</span>
+                                    </div>
+                                    <div className="text-xs text-slate-400 mb-3 flex gap-3"><span>Bought: <b
+                                        className="text-slate-700">{item.quantity}</b></span><span>Returned: <b
+                                        className="text-red-500">{item.refunded_quantity}</b></span></div>
+                                    {eligible > 0 && <div
+                                        className="flex items-center gap-3 bg-slate-50 p-2 rounded border border-slate-100">
+                                        <div className="flex items-center gap-2"><label
+                                            className="text-[10px] font-bold uppercase text-slate-400">Return</label><input
+                                            type="number" min="0" max={eligible} value={cur.qty}
+                                            onChange={e => handleQty(item.id, e.target.value, eligible)}
+                                            className="w-16 p-1 text-center font-bold border rounded outline-none focus:border-brand-500"/>
+                                        </div>
+                                        <div className="flex-grow"></div>
+                                        <label className="flex items-center gap-2 cursor-pointer select-none"><input
+                                            type="checkbox" checked={cur.dmg} onChange={() => toggleDmg(item.id)}
+                                            className="w-4 h-4 rounded text-red-600 focus:ring-red-500"/><span
+                                            className={`text-xs font-bold uppercase ${cur.dmg ? 'text-red-600' : 'text-slate-400'}`}>Damaged</span></label>
+                                    </div>}
+                                </div>
+                            )
+                        })}
+                    </div>
+                    <div className="pt-4 border-t mt-auto">
+                        <div className="flex justify-between mb-4"><span className="font-bold text-slate-500">Refund Total</span><span
+                            className="text-2xl font-bold text-red-600">{formatCurrency(estTotal)}</span></div>
+                        <Button onClick={submit} disabled={estTotal <= 0 || loading} variant="danger"
+                                className="w-full py-3 shadow-lg shadow-red-500/20">{loading ? 'Processing...' : 'Confirm Refund'}</Button>
+                    </div>
+                </Card>
+            );
+        };
+
+        return (
+            <div className="h-full flex gap-6 animate-fade-in">
+                <div
+                    className={`${selectedOrder ? 'w-1/2' : 'w-full'} transition-all duration-300 flex flex-col gap-4`}>
+                    <div className="flex justify-between items-center"><h1
+                        className="text-2xl font-bold text-slate-800">Orders</h1>
+                        <div className="flex gap-2"><FilterTab id="all" label="All"/><FilterTab id="completed"
+                                                                                                label="Completed"/><FilterTab
+                            id="refunded" label="Refunded"/><FilterTab id="pending" label="Pending"/></div>
+                    </div>
+                    <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
+                        <div className="overflow-auto scroller">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500">
+                                <tr>
+                                    <th className="p-4">ID</th>
+                                    <th className="p-4">Date</th>
+                                    <th className="p-4">Cashier</th>
+                                    <th className="p-4">Status</th>
+                                    <th className="p-4 text-right">Total</th>
+                                </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">{orders.map(o => (<tr key={o.id}
+                                                                                                   className={`hover:bg-slate-50 cursor-pointer transition-colors ${selectedOrder?.id === o.id ? 'bg-blue-50' : ''} ${o.status === 'refunded' ? 'bg-red-50/50' : ''}`}
+                                                                                                   onClick={() => setSelectedOrder(o)}>
+                                    <td className="p-4 font-mono font-bold text-brand-600">#{o.id}</td>
+                                    <td className="p-4 text-slate-500">{new Date(o.created_at).toLocaleDateString()}</td>
+                                    <td className="p-4 font-medium">{o.cashier_name}</td>
+                                    <td className="p-4"><StatusBadge status={o.status}/></td>
+                                    <td className="p-4 text-right font-bold text-slate-700">{formatCurrency(o.total_amount)}</td>
+                                </tr>))}</tbody>
+                            </table>
+                        </div>
+                    </Card>
+                </div>
+                {selectedOrder && <div className="w-1/2 h-full"><RefundPanel order={selectedOrder} onClose={() => {
+                    setSelectedOrder(null);
+                    loadOrders();
+                }}/></div>}
+            </div>
+        );
+    };
+
+    const StocktakeManager = () => {
+        const [sessions, setSessions] = useState([]);
+        const [activeSession, setActiveSession] = useState(null);
+        useEffect(() => {
+            loadSessions();
+        }, []);
+        const loadSessions = () => api.get('stocktake/').then(setSessions);
+        const startSession = async () => {
+            const note = prompt("Enter a note for this stocktake (e.g. End of Month):");
+            if (note === null) return;
+            try {
+                const res = await api.post('stocktake/', {note});
+                notify("Session Started!");
+                loadSessions();
+                api.get(`stocktake/${res.id}/`).then(setActiveSession);
+            } catch (e) {
+                notify(e.message, 'error');
+            }
+        };
+
+        const SessionDetail = ({session, onClose}) => {
+            const [items, setItems] = useState(session.items || []);
+            const [filter, setFilter] = useState('');
+            const [inputCode, setInputCode] = useState("");
             const [showCamera, setShowCamera] = useState(false);
             const inputRef = useRef(null);
-
-            useEffect(() => { localStorage.setItem('pos_cart', JSON.stringify(cart)); }, [cart]);
-            useEffect(() => { 
-                const keepFocus = (e) => { 
-                    if(document.activeElement.tagName !== 'INPUT' && !showCamera) inputRef.current?.focus(); 
-                };
-                document.addEventListener('click', keepFocus); inputRef.current?.focus();
-                return () => document.removeEventListener('click', keepFocus);
-            }, [showCamera]);
-
-            const handleScan = async (code) => {
-                if(!code) return;
-                setLoading(true);
-                try {
-                    const p = await api.get(`scan/${code}/`);
-                    setCart(prev => {
-                        const ex = prev.find(x => x.barcode === p.barcode);
-                        // Add scanQty instead of just 1
-                        return ex ? prev.map(x => x.barcode === p.barcode ? {...x, qty: x.qty + scanQty} : x) : [...prev, {...p, qty: scanQty}];
-                    });
-                    setInput("");
-                    // FIX: Don't reset scanQty here, let user keep scanning 5s if they want
-                } catch(e) { notify("Product Not Found", 'error'); } 
-                finally { setLoading(false); setTimeout(()=>inputRef.current?.focus(), 50); }
-            };
-
-            const updateQty = (barcode, newQty) => {
-                if (newQty < 1) return;
-                setCart(cart.map(item => item.barcode === barcode ? { ...item, qty: parseInt(newQty) } : item));
-            };
-
-            const checkout = async (method) => {
-                if(!cart.length) return;
-                setLoading(true);
-                try {
-                    const res = await api.post('purchase/', { payment_method: method, items: cart.map(i=>({barcode:i.barcode, quantity:i.qty})) });
-                    notify(`Order #${res.order_id} Paid (${method.toUpperCase()}): ${formatCurrency(res.total)}`);
-                    setCart([]);
-                } catch(e) { notify(e.message, 'error'); } finally { setLoading(false); }
-            };
-
-            const total = cart.reduce((a,b)=>a+(b.price*b.qty),0);
-
-            return (
-                <div className="h-full flex gap-6 animate-fade-in">
-                    {showCamera && <CameraModal onScan={(code)=>{setShowCamera(false); handleScan(code); notify("Scanned!");}} onClose={()=>setShowCamera(false)} />}
-                    <div className="flex-grow flex flex-col gap-4">
-                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex gap-4 items-center ring-4 ring-slate-50 transition-all focus-within:ring-brand-100 focus-within:border-brand-300">
-                            <div className="flex flex-col gap-1 w-24">
-                                <label className="text-xs font-bold text-slate-400 uppercase">QTY</label>
-                                <input type="number" min="1" value={scanQty} onChange={e => setScanQty(Math.max(1, parseInt(e.target.value) || 1))} className="w-full text-xl font-bold text-center outline-none border-b-2 border-brand-500 focus:bg-slate-50" />
-                            </div>
-                            <div className="h-10 w-px bg-slate-200 mx-2"></div>
-                            <i className="ph ph-barcode text-4xl text-slate-300"></i>
-                            <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleScan(input.trim())} className="w-full text-2xl outline-none font-mono placeholder:text-slate-300" placeholder="Scan item barcode..." autoFocus />
-                            <Button variant="dark" onClick={()=>setShowCamera(true)} className="px-4 h-12"><i className="ph ph-camera text-xl"></i> Scan</Button>
-                        </div>
-                        <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
-                            <div className="p-4 bg-slate-50 border-b font-bold text-xs text-slate-500 uppercase flex tracking-wider">
-                                <span className="flex-grow">Item</span><span className="w-32 text-center">Qty</span><span className="w-24 text-right">Price</span><span className="w-10"></span>
-                            </div>
-                            <div className="flex-grow overflow-auto p-2 space-y-1 bg-white">
-                                {cart.map(i => (
-                                    <div key={i.barcode} className="flex items-center p-3 hover:bg-slate-50 rounded-lg group transition-colors">
-                                        <div className="flex-grow font-bold text-slate-700">{i.product_name} <span className="block text-xs text-slate-400 font-normal">{i.sku}</span></div>
-                                        <div className="w-32 flex items-center justify-center gap-2">
-                                            <button onClick={() => updateQty(i.barcode, i.qty - 1)} className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">-</button>
-                                            <span className="w-8 text-center font-bold">{i.qty}</span>
-                                            <button onClick={() => updateQty(i.barcode, i.qty + 1)} className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">+</button>
-                                        </div>
-                                        <div className="w-24 text-right font-mono text-slate-600">{formatCurrency(i.price*i.qty)}</div>
-                                        <button onClick={()=>setCart(cart.filter(x=>x.barcode!==i.barcode))} className="w-10 text-slate-300 hover:text-red-500"><i className="ph ph-trash text-xl"></i></button>
-                                    </div>
-                                ))}
-                            </div>
-                        </Card>
-                    </div>
-                    <div className="w-80 flex flex-col gap-4">
-                        <Card className="bg-slate-900 text-white border-none shadow-2xl relative overflow-hidden">
-                            <div className="relative z-10">
-                                <div className="text-slate-400 text-xs font-bold uppercase tracking-widest">Total Due</div>
-                                <div className="text-5xl font-mono font-bold mt-2 tracking-tight">{formatCurrency(total)}</div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 mt-8 relative z-10">
-                                <Button onClick={()=>checkout('cash')} disabled={!cart.length || loading} className="col-span-2 py-4 text-lg bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">CASH</Button>
-                                <Button onClick={()=>checkout('card')} disabled={!cart.length || loading} className="py-3 bg-blue-600 hover:bg-blue-500">CARD</Button>
-                                <Button onClick={()=>checkout('transfer')} disabled={!cart.length || loading} className="py-3 bg-purple-600 hover:bg-purple-500">TRANSFER</Button>
-                            </div>
-                            <i className="ph ph-receipt absolute -bottom-6 -right-6 text-9xl text-white opacity-5"></i>
-                        </Card>
-                    </div>
-                </div>
-            );
-        };
-
-        const OrderHistory = () => {
-            const [orders, setOrders] = useState([]);
-            const [selectedOrder, setSelectedOrder] = useState(null);
-            const [filter, setFilter] = useState('all');
-            
-            useEffect(() => { loadOrders(); }, [filter]);
-            const loadOrders = () => { const q = filter!=='all'?`?status=${filter}`:''; api.get(`orders/${q}`).then(setOrders); };
-
-            const FilterTab = ({ id, label }) => <button onClick={() => setFilter(id)} className={`px-3 py-1 text-sm font-medium rounded-full transition-all ${filter===id ? 'bg-brand-600 text-white shadow' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{label}</button>;
-
-            const RefundPanel = ({ order, onClose }) => {
-                const [refundData, setRefundData] = useState({});
-                const [loading, setLoading] = useState(false);
-
-                useEffect(() => {
-                    const initial = {};
-                    order.items.forEach(i => initial[i.id] = { qty: 0, damaged: false });
-                    setRefundData(initial);
-                }, [order]);
-
-                const handleQty = (id, v, max) => setRefundData(p => ({...p, [id]: {...p[id], qty: Math.min(Math.max(0, parseInt(v)||0), max)}}));
-                const toggleDmg = (id) => setRefundData(p => ({...p, [id]: {...p[id], damaged: !p[id].damaged}}));
-
-                const submit = async () => {
-                    const items = order.items.map(i => ({ barcode: i.barcode, quantity: refundData[i.id]?.qty||0, is_damaged: refundData[i.id]?.dmg||false })).filter(i=>i.quantity>0);
-                    if(!items.length) return notify("Select items to return", 'error');
-                    setLoading(true);
-                    try { await api.post('refund/', { order_id: order.id, items }); notify("Refund Processed"); onClose(); } catch(e) { notify(e.message, 'error'); } finally { setLoading(false); }
-                };
-
-                const estTotal = order.items.reduce((a, i) => a + (parseFloat(i.unit_price) * (refundData[i.id]?.qty||0)), 0);
-
-                return (
-                    <Card className="h-full flex flex-col border-l-4 border-l-brand-500 animate-fade-in shadow-xl">
-                        <div className="flex justify-between items-start mb-4 border-b pb-4">
-                            <div><h2 className="text-xl font-bold">Order #{order.id}</h2><p className="text-sm text-slate-500">{formatDate(order.created_at)}</p></div>
-                            <Button variant="ghost" onClick={()=>onClose(true)}><i className="ph ph-x text-lg"></i></Button>
-                        </div>
-                        <div className="flex-grow overflow-auto space-y-3">
-                            {order.items.map(item => {
-                                const eligible = item.quantity - item.refunded_quantity;
-                                const cur = refundData[item.id] || {qty:0};
-                                return (
-                                    <div key={item.id} className={`p-4 rounded-lg border transition-all ${eligible>0 ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                                        <div className="flex justify-between mb-1"><span className="font-bold text-slate-700">{item.product_name}</span><span className="font-mono text-slate-500">{formatCurrency(item.unit_price)}</span></div>
-                                        <div className="text-xs text-slate-400 mb-3 flex gap-3"><span>Bought: <b className="text-slate-700">{item.quantity}</b></span><span>Returned: <b className="text-red-500">{item.refunded_quantity}</b></span></div>
-                                        {eligible > 0 && <div className="flex items-center gap-3 bg-slate-50 p-2 rounded border border-slate-100">
-                                            <div className="flex items-center gap-2"><label className="text-[10px] font-bold uppercase text-slate-400">Return</label><input type="number" min="0" max={eligible} value={cur.qty} onChange={e=>handleQty(item.id, e.target.value, eligible)} className="w-16 p-1 text-center font-bold border rounded outline-none focus:border-brand-500" /></div>
-                                            <div className="flex-grow"></div>
-                                            <label className="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" checked={cur.dmg} onChange={()=>toggleDmg(item.id)} className="w-4 h-4 rounded text-red-600 focus:ring-red-500"/><span className={`text-xs font-bold uppercase ${cur.dmg?'text-red-600':'text-slate-400'}`}>Damaged</span></label>
-                                        </div>}
-                                    </div>
-                                )
-                            })}
-                        </div>
-                        <div className="pt-4 border-t mt-auto">
-                            <div className="flex justify-between mb-4"><span className="font-bold text-slate-500">Refund Total</span><span className="text-2xl font-bold text-red-600">{formatCurrency(estTotal)}</span></div>
-                            <Button onClick={submit} disabled={estTotal<=0||loading} variant="danger" className="w-full py-3 shadow-lg shadow-red-500/20">{loading?'Processing...':'Confirm Refund'}</Button>
-                        </div>
-                    </Card>
-                );
-            };
-
-            return (
-                <div className="h-full flex gap-6 animate-fade-in">
-                    <div className={`${selectedOrder?'w-1/2':'w-full'} transition-all duration-300 flex flex-col gap-4`}>
-                        <div className="flex justify-between items-center">
-                            <h1 className="text-2xl font-bold text-slate-800">Orders</h1>
-                            <div className="flex gap-2"><FilterTab id="all" label="All"/><FilterTab id="completed" label="Completed"/><FilterTab id="refunded" label="Refunded"/><FilterTab id="pending" label="Pending"/></div>
-                        </div>
-                        <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
-                            <div className="overflow-auto scroller">
-                                <table className="w-full text-left text-sm"><thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500"><tr><th className="p-4">ID</th><th className="p-4">Date</th><th className="p-4">Cashier</th><th className="p-4">Status</th><th className="p-4 text-right">Total</th></tr></thead><tbody className="divide-y divide-slate-100">{orders.map(o => (<tr key={o.id} className={`hover:bg-slate-50 cursor-pointer transition-colors ${selectedOrder?.id===o.id?'bg-blue-50':''} ${o.status==='refunded'?'bg-red-50/50':''}`} onClick={()=>setSelectedOrder(o)}><td className="p-4 font-mono font-bold text-brand-600">#{o.id}</td><td className="p-4 text-slate-500">{new Date(o.created_at).toLocaleDateString()}</td><td className="p-4 font-medium">{o.cashier_name}</td><td className="p-4"><StatusBadge status={o.status}/></td><td className="p-4 text-right font-bold text-slate-700">{formatCurrency(o.total_amount)}</td></tr>))}</tbody></table>
-                            </div>
-                        </Card>
-                    </div>
-                    {selectedOrder && <div className="w-1/2 h-full"><RefundPanel order={selectedOrder} onClose={()=>{setSelectedOrder(null); loadOrders();}} /></div>}
-                </div>
-            );
-        };
-
-        const App = () => {
-            const [view, setView] = useState('dashboard');
-            const [user, setUser] = useState(null);
-            const [modalParams, setModalParams] = useState(false);
-
-            useEffect(() => { 
-                api.get('me/').then(setUser).catch(() => window.location.href = '/login/');
-                const v = localStorage.getItem('view'); if(v) setView(v); 
+            useEffect(() => {
+                inputRef.current?.focus();
             }, []);
-
-            const nav = (v, params=false) => { setView(v); setModalParams(params); localStorage.setItem('view', v); };
-            const NavItem = ({ id, icon, label }) => ( <button onClick={() => nav(id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl mb-1 transition-all ${view===id ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><i className={`ph ${icon} text-xl`}></i><span className="font-medium tracking-wide">{label}</span></button> );
-            
-            if (!user) return <div className="h-screen flex items-center justify-center text-slate-400"><i className="ph ph-spinner animate-spin text-2xl"></i></div>;
+            const handleScan = async (code) => {
+                const item = items.find(i => i.barcode === code);
+                if (!item) return notify("Item not found in this session list", 'error');
+                const newQty = item.counted_quantity + 1;
+                updateCount(item, newQty);
+                setInputCode("");
+            };
+            const updateCount = async (item, qty) => {
+                const updatedItems = items.map(i => i.id === item.id ? {...i, counted_quantity: parseInt(qty)} : i);
+                setItems(updatedItems);
+                try {
+                    await api.post(`stocktake/${session.id}/`, {barcode: item.barcode, quantity: parseInt(qty)});
+                } catch (e) {
+                    notify("Failed to save count", 'error');
+                }
+            };
+            const finalize = async () => {
+                if (!confirm("Are you sure? This will update ALL stock levels.")) return;
+                try {
+                    await api.put(`stocktake/${session.id}/`, {});
+                    notify("Stocktake Finalized!");
+                    onClose();
+                } catch (e) {
+                    notify(e.message, 'error');
+                }
+            };
+            const filteredItems = items.filter(i => i.product_name.toLowerCase().includes(filter.toLowerCase()) || i.barcode.includes(filter));
+            const totalVar = items.reduce((a, i) => a + (i.counted_quantity - i.expected_quantity), 0);
 
             return (
-                <div className="flex h-screen w-full bg-slate-100 font-sans text-slate-900">
-                    <aside className="w-72 bg-slate-900 flex flex-col p-6 flex-shrink-0">
-                        <div className="flex items-center gap-3 mb-10 px-2"><div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-brand-500/20">I</div>
-                            <div>
-                                <span className="text-xl font-bold text-white tracking-tight block leading-none">Inventro</span>
-                                <span className="text-xs text-slate-500 font-mono uppercase">{user.is_manager ? 'Manager' : 'Cashier'}</span>
-                            </div>
+                <div className="fixed inset-0 bg-white z-50 flex flex-col animate-fade-in">{showCamera &&
+                    <CameraModal onScan={(c) => {
+                        setShowCamera(false);
+                        handleScan(c);
+                        notify("Scanned!");
+                    }} onClose={() => setShowCamera(false)}/>}
+                    <div className="bg-slate-900 text-white p-4 flex justify-between items-center shadow-lg">
+                        <div><h2 className="text-xl font-bold">Stocktake #{session.id}</h2><span
+                            className="text-slate-400 text-sm">Started: {formatDate(session.created_at)}</span></div>
+                        <div className="flex gap-3"><Button variant="ghost" className="text-white hover:bg-white/10"
+                                                            onClick={onClose}>Close</Button>{session.status === 'in_progress' &&
+                            <Button variant="success" onClick={finalize}>Finalize & Adjust Stock</Button>}</div>
+                    </div>
+                    <div
+                        className="flex-grow flex flex-col p-6 gap-4 bg-slate-50">{session.status === 'in_progress' && (
+                        <div className="bg-white p-4 rounded-xl shadow-sm border flex gap-4 items-center"><i
+                            className="ph ph-barcode text-2xl text-slate-400"></i><input ref={inputRef}
+                                                                                         value={inputCode}
+                                                                                         onChange={e => setInputCode(e.target.value)}
+                                                                                         onKeyDown={e => e.key === 'Enter' && handleScan(inputCode)}
+                                                                                         className="flex-grow text-lg outline-none font-mono"
+                                                                                         placeholder="Scan item to count..."
+                                                                                         autoFocus/><Button
+                            variant="dark" onClick={() => setShowCamera(true)}><i
+                            className="ph ph-camera"></i> Scan</Button></div>)}
+                        <div className="flex justify-between items-center"><input placeholder="Filter items..."
+                                                                                  className="p-2 rounded border"
+                                                                                  value={filter}
+                                                                                  onChange={e => setFilter(e.target.value)}/>
+                            <div
+                                className={`font-bold px-3 py-1 rounded ${totalVar === 0 ? 'bg-gray-200 text-gray-600' : totalVar < 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>Net
+                                Variance: {totalVar > 0 ? '+' : ''}{totalVar}</div>
                         </div>
-                        <nav className="flex-grow space-y-1">
-                            <NavItem id="pos" icon="ph-shopping-cart" label="POS Terminal" />
-                            <NavItem id="orders" icon="ph-receipt" label="Orders & Refunds" />
-
-                            {user.is_manager && (
-                                <>
-                                    <div className="pt-6 pb-2"><span className="text-xs font-bold uppercase text-slate-600 px-4 tracking-wider">Management</span></div>
-                                    <NavItem id="dashboard" icon="ph-chart-pie-slice" label="Overview" />
-                                    <NavItem id="inventory" icon="ph-package" label="Inventory" />
-                                    <NavItem id="procurement" icon="ph-truck" label="Procurement" />
-                                    <NavItem id="staff" icon="ph-users" label="Staff" />
-                                    <NavItem id="audit" icon="ph-list-magnifying-glass" label="Audit Logs" />
-                                </>
-                            )}
-                        </nav>
-                        <div className="mt-auto pt-6 border-t border-slate-800">
-                            <div className="px-4 mb-4 text-slate-500 text-xs">Logged in as <strong className="text-slate-300">{user.username}</strong></div>
-                            <a href="/logout/" className="flex items-center gap-3 px-4 py-2 text-red-400 hover:text-red-300 text-sm font-medium transition-colors"><i className="ph ph-sign-out text-lg"></i> Sign Out</a>
+                        <div className="flex-grow overflow-auto bg-white rounded-xl border shadow-sm">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-100 font-bold sticky top-0">
+                                <tr>
+                                    <th className="p-3">Product</th>
+                                    <th className="p-3 text-right">Expected</th>
+                                    <th className="p-3 text-center w-32">Counted</th>
+                                    <th className="p-3 text-right">Variance</th>
+                                </tr>
+                                </thead>
+                                <tbody className="divide-y">{filteredItems.map(i => {
+                                    const variance = i.counted_quantity - i.expected_quantity;
+                                    return (<tr key={i.id} className="hover:bg-slate-50">
+                                        <td className="p-3 font-medium">{i.product_name} <span
+                                            className="text-xs text-slate-400 block">{i.barcode}</span></td>
+                                        <td className="p-3 text-right text-slate-500">{i.expected_quantity}</td>
+                                        <td className="p-3 text-center">{session.status === 'in_progress' ? (
+                                            <div className="flex items-center justify-center gap-1">
+                                                <button onClick={() => updateCount(i, i.counted_quantity - 1)}
+                                                        className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">-
+                                                </button>
+                                                <input className="w-12 text-center font-bold border rounded p-1"
+                                                       value={i.counted_quantity}
+                                                       onChange={e => updateCount(i, e.target.value)}/>
+                                                <button onClick={() => updateCount(i, i.counted_quantity + 1)}
+                                                        className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">+
+                                                </button>
+                                            </div>) : <span className="font-bold">{i.counted_quantity}</span>}</td>
+                                        <td className={`p-3 text-right font-bold ${variance === 0 ? 'text-slate-300' : variance < 0 ? 'text-red-500' : 'text-green-500'}`}>{variance > 0 ? '+' : ''}{variance}</td>
+                                    </tr>)
+                                })}</tbody>
+                            </table>
                         </div>
-                    </aside>
-                    <main className="flex-grow p-8 overflow-hidden h-full relative">
-                        <ErrorBoundary>
-                            {user.is_manager && view==='dashboard' && <Dashboard onNavigate={nav}/>}
-                            {user.is_manager && view==='inventory' && <InventoryManager openModalOnLoad={modalParams}/>}
-                            {user.is_manager && view==='procurement' && <Procurement openCreateOnLoad={modalParams}/>}
-                            {user.is_manager && view==='audit' && <AuditLogs/>}
-                            {user.is_manager && view==='staff' && <StaffManager/>}
-                            
-                            {/* Shared Views */}
-                            {view==='pos' && <PosTerminal/>}
-                            {view==='orders' && <OrderHistory/>}
-                        </ErrorBoundary>
-                    </main>
+                    </div>
                 </div>
             );
         };
-        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-    </script>
+
+        return (
+            <div className="h-full flex flex-col gap-6 animate-fade-in">{activeSession &&
+                <SessionDetail session={activeSession} onClose={() => {
+                    setActiveSession(null);
+                    loadSessions();
+                }}/>}
+                <div className="flex justify-between items-center"><h1
+                    className="text-2xl font-bold text-slate-800">Stocktake</h1><Button onClick={startSession}><i
+                    className="ph ph-plus"></i> New Session</Button></div>
+                <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
+                    <div className="overflow-auto scroller">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500">
+                            <tr>
+                                <th className="p-4">Session #</th>
+                                <th className="p-4">Date</th>
+                                <th className="p-4">Status</th>
+                                <th className="p-4">Note</th>
+                                <th className="p-4">By</th>
+                            </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">{sessions.map(s => <tr key={s.id}
+                                                                                                onClick={() => api.get(`stocktake/${s.id}/`).then(setActiveSession)}
+                                                                                                className="hover:bg-slate-50 cursor-pointer transition-colors">
+                                <td className="p-4 font-mono font-bold text-brand-600">#{s.id}</td>
+                                <td className="p-4 text-slate-500">{formatDate(s.created_at)}</td>
+                                <td className="p-4"><StatusBadge status={s.status}/></td>
+                                <td className="p-4 text-slate-600 italic">{s.note}</td>
+                                <td className="p-4 font-medium">{s.created_by_name}</td>
+                            </tr>)}</tbody>
+                        </table>
+                    </div>
+                </Card></div>
+        );
+    };
+
+    // --- UPDATED: APP COMPONENT (Responsive Layout) ---
+    const App = () => {
+        const [view, setView] = useState('dashboard');
+        const [user, setUser] = useState(null);
+        const [storeConfig, setStoreConfig] = useState({store_name: 'Inventro'});
+        const [modalParams, setModalParams] = useState(false);
+        // NEW: Mobile Menu State
+        const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+        useEffect(() => {
+            api.get('me/').then(setUser).catch(() => window.location.href = '/login/');
+            api.get('settings/').then(setStoreConfig).catch(e => console.error("Config load failed", e));
+            const v = localStorage.getItem('view');
+            if (v) setView(v);
+        }, []);
+
+        const nav = (v, params = false) => {
+            setView(v);
+            setModalParams(params);
+            localStorage.setItem('view', v);
+            setMobileMenuOpen(false); // Close menu on mobile when clicked
+        };
+
+        const NavItem = ({id, icon, label}) => (<button onClick={() => nav(id)}
+             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl mb-1 transition-all ${view === id ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+            <i className={`ph ${icon} text-xl`}></i><span className="font-medium tracking-wide">{label}</span>
+        </button>);
+
+        if (!user) return <div className="h-screen flex items-center justify-center text-slate-400"><i
+            className="ph ph-spinner animate-spin text-2xl"></i></div>;
+
+        return (
+            <div className="flex h-screen w-full bg-slate-100 font-sans text-slate-900 overflow-hidden">
+                {/* Mobile Header */}
+                <div className="md:hidden fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 z-40 flex justify-between items-center shadow-md h-16">
+                    <div className="font-bold text-lg flex items-center gap-2">
+                         <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center font-bold text-sm">
+                            {storeConfig.store_name.charAt(0)}
+                        </div>
+                        {storeConfig.store_name}
+                    </div>
+                    <button onClick={() => setMobileMenuOpen(true)} className="p-2 text-2xl"><i className="ph ph-list"></i></button>
+                </div>
+
+                {/* Sidebar (Drawer on Mobile, Static on Desktop) */}
+                <div className={`fixed inset-0 z-50 bg-black/50 transition-opacity md:hidden ${mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setMobileMenuOpen(false)}></div>
+
+                <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 flex flex-col p-6 transition-transform duration-300 md:relative md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                    {/* Mobile Close Button */}
+                    <button onClick={() => setMobileMenuOpen(false)} className="md:hidden absolute top-4 right-4 text-slate-400 text-2xl"><i className="ph ph-x"></i></button>
+
+                    <div className="flex items-center gap-3 mb-10 px-2 mt-8 md:mt-0">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-brand-500/20">
+                            {storeConfig.store_name.charAt(0)}
+                        </div>
+                        <div>
+                            <span className="text-xl font-bold text-white tracking-tight block leading-none">{storeConfig.store_name}</span>
+                            <span className="text-xs text-slate-500 font-mono uppercase">{user.is_manager ? 'Manager' : 'Cashier'}</span>
+                        </div>
+                    </div>
+                    <nav className="flex-grow space-y-1 overflow-y-auto scroller">
+                        <NavItem id="pos" icon="ph-shopping-cart" label="POS Terminal"/>
+                        <NavItem id="orders" icon="ph-receipt" label="Orders & Refunds"/>
+                        <NavItem id="customers" icon="ph-users-three" label="Customers"/>
+
+                        {user.is_manager && (
+                            <>
+                                <div className="pt-6 pb-2"><span
+                                    className="text-xs font-bold uppercase text-slate-600 px-4 tracking-wider">Management</span>
+                                </div>
+                                <NavItem id="dashboard" icon="ph-chart-pie-slice" label="Overview"/>
+                                <NavItem id="inventory" icon="ph-package" label="Inventory"/>
+                                <NavItem id="procurement" icon="ph-truck" label="Procurement"/>
+                                <NavItem id="stocktake" icon="ph-clipboard-text" label="Stocktake"/>
+                                <NavItem id="staff" icon="ph-users" label="Staff"/>
+                                <NavItem id="settings" icon="ph-gear" label="Settings"/>
+                                <NavItem id="audit" icon="ph-list-magnifying-glass" label="Audit Logs"/>
+                            </>
+                        )}
+                    </nav>
+                    <div className="mt-auto pt-6 border-t border-slate-800 relative">
+                        {user.is_manager && <div className="mb-4 px-2"><NotificationHub/></div>}
+                        <div className="px-4 mb-4 text-slate-500 text-xs">Logged in as <strong
+                            className="text-slate-300">{user.username}</strong></div>
+                        <a href="/logout/"
+                           className="flex items-center gap-3 px-4 py-2 text-red-400 hover:text-red-300 text-sm font-medium transition-colors"><i
+                            className="ph ph-sign-out text-lg"></i> Sign Out</a>
+                    </div>
+                </aside>
+
+                <main className="flex-grow p-4 md:p-8 overflow-hidden h-full relative pt-20 md:pt-8">
+                    <ErrorBoundary>
+                        {user.is_manager && view === 'dashboard' && <Dashboard onNavigate={nav}/>}
+                        {user.is_manager && view === 'inventory' && <InventoryManager openModalOnLoad={modalParams}/>}
+                        {user.is_manager && view === 'procurement' && <Procurement openCreateOnLoad={modalParams}/>}
+                        {user.is_manager && view === 'audit' && <AuditLogs/>}
+                        {user.is_manager && view === 'staff' && <StaffManager/>}
+                        {user.is_manager && view === 'stocktake' && <StocktakeManager/>}
+                        {user.is_manager && view === 'settings' && <SettingsManager onUpdate={(newSettings) => setStoreConfig(newSettings)}/>}
+                        {view === 'pos' && <PosTerminal/>}
+                        {view === 'orders' && <OrderHistory/>}
+                        {view === 'customers' && <CustomerManager/>}
+                    </ErrorBoundary>
+                </main>
+            </div>
+        );
+    };
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
 </body>
 </html>

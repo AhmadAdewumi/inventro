@@ -1,15 +1,19 @@
-from django.core.exceptions import ObjectDoesNotExist
-from .models import ProductVariant
-from django.db import transaction
-from django.db.models import F, Sum, Count, Q
-from rest_framework.exceptions import ValidationError
-from .models import (ProductVariant, Order, OrderItem, 
-                     InventoryLog, PurchaseOrder, PurchaseOrderItem, 
-                     Supplier, Product, ProductVariant)
 from decimal import Decimal
-from .pricing import calculate_dynamic_price
+
+from django.db import transaction
+from django.db.models import F, Sum
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
+
+from .models import Notification
+from .models import (Order, OrderItem,
+                     InventoryLog, PurchaseOrder, PurchaseOrderItem,
+                     Supplier, Product, ProductVariant, Customer,
+                     StocktakeSession, StocktakeItem
+                     )
+from .pricing import calculate_dynamic_price
 from .utils import generate_barcode_pdf
+
 
 #-- felt like home a litle bit, but this is actually a weird way of defining types (only for readbility, nah nah, it doesn't even use it)
 def get_product_by_barcode(barcode: str) -> ProductVariant: #-- retunrs ProductVariant
@@ -21,66 +25,115 @@ def get_product_by_barcode(barcode: str) -> ProductVariant: #-- retunrs ProductV
     except ProductVariant.DoesNotExist:
         return None
     
-def process_purchase(user, payment_method, items_data):
+def process_purchase(user, payment_method, items_data, customer_id=None, is_quote = False):
     """
-    1. Validates stock for all items.
-    2. Creates Order.
-    3. Atomically updates stock.
-    4. Creates OrderItems.
+    Handles Sales, including Debt and Wallet payments.
     """
     with transaction.atomic():
+        customer = None
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=customer_id)
+            except Customer.DoesNotExist:
+                raise ValidationError("Invalid Customer ID")
+
+        status = 'quote' if is_quote else 'completed'
+        final_payment_method = 'none' if is_quote else payment_method
+
+        # Create Order
         order = Order.objects.create(
-            cashier = user,
-            status = 'completed', #-- assuming immediate payment
-            payment_method = payment_method,
-            total_amount = Decimal('0.00')
+            cashier=user,
+            status='completed',
+            payment_method=payment_method,
+            total_amount=Decimal('0.00'),
+            customer=customer # Link customer
         )
 
         total_sum = Decimal('0.00')
 
+        # ... (Loop through items, check stock, create OrderItems) ...
         for item in items_data:
-            print(f"DEBUG ITEM TYPE: {type(item)}")
-            print(f"DEBUG ITEM DATA: {item}")
-            barcode, qty = item['barcode'], item['quantity']
+            barcode = item['barcode']
+            qty = item['quantity']
             manual_discount = item.get('discount_percent', 0)
-            try:
-                variant = ProductVariant.objects.select_for_update().get(barcode=barcode) #-- pessimistic locking
-            except ProductVariant.DoesNotExist:
-                raise ValidationError(f"Product with barcode {barcode} does not exist.")
             
-            #-- check the stock
-            if variant.stock_quantity < qty:
+            try:
+                #-- we lock row if it is a real sale, and just read it if it is a quote
+                if not is_quote:
+                    variant = ProductVariant.objects.select_for_update().get(barcode=barcode)
+                else:
+                    variant = ProductVariant.objects.get(barcode=barcode)
+            except ProductVariant.DoesNotExist:
+                raise ValidationError(f"Product {barcode} not found.")
+            
+            if not is_quote and variant.stock_quantity < qty:
                 raise ValidationError(f"Not enough stock for {variant.product.name}. Available: {variant.stock_quantity}")
             
             final_unit_price = calculate_dynamic_price(variant, qty, manual_discount)
             
-            OrderItem.objects.create(
-                order = order,
-                variant=variant,
-                quantity=qty,
-                unit_price=final_unit_price
-            )
+            OrderItem.objects.create(order=order, variant=variant, quantity=qty, unit_price=final_unit_price)
 
-            #-- update the stock
-            new_stock = variant.stock_quantity - qty
-            variant.stock_quantity = new_stock
-            variant.save()
+            #-- we only update thw stock and logs for real sale
+            if not is_quote:
+                variant.stock_quantity -= qty
+                variant.save()
 
-            InventoryLog.objects.create(
-                variant=variant,
-                user=user,
-                action='sale',
-                quantity_change=-qty,
-                stock_after=new_stock,
-                note=f"Order #{order.id}"
-            )
+                InventoryLog.objects.create(
+                    variant=variant, user=user, action='sale', quantity_change=-qty,
+                    stock_after=variant.stock_quantity, note=f"Order #{order.id}"
+                )
 
+                #-- LOW STOCK ALERT
+                if variant.stock_quantity <= 5:
+                    #-- we check if alert already exists to avoid spamming
+                    recent_alert = Notification.objects.filter(
+                        title = "Low Stock Alert",
+                        message__contains=variant.sku,
+                        is_read=False
+                    ).exists()
+
+                    if not recent_alert:
+                        Notification.objects.create(
+                            title="Low Stock Alert",
+                            message=f"{variant.product.name} ({variant.name_suffix}) is low. {variant.stock_quantity} left.",
+                            link="inventory"
+                        )
             total_sum += (final_unit_price * qty)
 
-        #-- update the total amount of order
         order.total_amount = total_sum
         order.save()
+
+        #-- we handle Debt/Pay from wallet only for Real Sales
+        if not is_quote:
+            if payment_method == 'debt':
+                if not customer: raise ValidationError("Customer required for Debt")
+                customer.wallet_balance -= total_sum
+                customer.save()
+            elif payment_method=='wallet':
+                if not customer: raise ValidationError("Customer required")
+                if customer.wallet_balance < total_sum: raise ValidationError("Insufficient wallet funds")
+                customer.wallet_balance -= total_sum
+                customer.save()
         return order
+
+        # # -- HANDLE DEBT/WALLET LOGIC
+        # if payment_method == 'debt':
+        #     if not customer:
+        #         raise ValidationError("Customer required for Debt payments.")
+        #     #-- debt decreases balance (becomes negative)
+        #     customer.wallet_balance -= total_sum
+        #     customer.save()
+        #
+        # elif payment_method == 'wallet':
+        #     if not customer:
+        #         raise ValidationError("Customer required for Wallet payments.")
+        #     if customer.wallet_balance < total_sum:
+        #         raise ValidationError(f"Insufficient funds. Balance: {customer.wallet_balance}")
+        #     #-- deduct from pre-paid balance
+        #     customer.wallet_balance -= total_sum
+        #     customer.save()
+        #
+        # return order
     
 #-- for manual inventory adjustment
 def adjust_inventory(user, data):
@@ -206,11 +259,25 @@ def receive_purchase_order(user, purchase_order_id):
             #-- locking the row for update
             variant = ProductVariant.objects.select_for_update().get(id=variant.id)
 
-            old_stock = variant.stock_quantity
-            new_stock = old_stock + item.quantity
+            # old_stock = variant.stock_quantity
+            # new_stock = old_stock + item.quantity
+
+            current_stock = Decimal(variant.stock_quantity)
+            current_cost = variant.cost_price
+            incoming_qty = Decimal(item.quantity)
+            incoming_cost = item.unit_cost
+
+            if current_stock <= 0:
+                new_cost = incoming_cost
+            else:
+                # 2. Calculate AVCO(Average Cost)
+                # Formula: ((OldQty * OldCost) + (NewQty * NewCost)) / (OldQty + NewQty)
+                total_value = (current_stock * current_cost) + (incoming_qty * incoming_cost)
+                total_qty = current_stock + incoming_qty
+                new_cost = total_value / total_qty
 
             #-- stock update
-            variant.stock_quantity = new_stock
+            variant.stock_quantity = int(current_stock + incoming_qty)
 
             #-- update the CP
             variant.cost_price = item.unit_cost
@@ -223,14 +290,20 @@ def receive_purchase_order(user, purchase_order_id):
                 user=user,
                 action='restock',
                 quantity_change=item.quantity,
-                stock_after=new_stock,
-                note=f"Purchase Order #{purchase_order.id} from {purchase_order.supplier.name}"
+                stock_after=variant.stock_quantity,
+                note=f"PO #{purchase_order.id} (Average Cost: {variant.cost_price})"
             )
         
         #-- we mark the purchase order as received
         purchase_order.status = 'received'
         purchase_order.received_date = timezone.now()
         purchase_order.save()
+
+        Notification.objects.create(
+            title="Stock Received",
+            message=f"Purchase Order #{purchase_order.id} from {purchase_order.supplier.name} has been added to inventory.",
+            link="procurement"
+        )
 
         return purchase_order
     
@@ -364,3 +437,94 @@ def create_purchase_order(user, data):
         purchase_order.save()
         
         return purchase_order
+    
+    #-- STOCK TAKING
+    
+def start_stocktake(user, note=""):
+    """
+    Snapshots the entire inventory state into a new session.
+    """
+    with transaction.atomic():
+        # 1. Create Session
+        session = StocktakeSession.objects.create(created_by=user, note=note)
+        
+        # 2. Snapshot every product
+        variants = ProductVariant.objects.filter(is_active=True) # Assuming you added is_active to Variant or Product
+        # If is_active is on Product, use variant.product.is_active=True
+        # For now, let's grab all:
+        all_variants = ProductVariant.objects.all()
+        
+        items = []
+        for v in all_variants:
+            items.append(StocktakeItem(
+                session=session,
+                variant=v,
+                expected_quantity=v.stock_quantity,
+                counted_quantity=0 # Default start at 0 (Blind Count) or v.stock_quantity (Guided)
+                # Let's default to 0 to force them to scan/count.
+            ))
+        
+        StocktakeItem.objects.bulk_create(items)
+        return session
+
+def update_stocktake_item(session_id, barcode, qty):
+    """
+    Updates the count for a specific item in the session.
+    """
+    try:
+        item = StocktakeItem.objects.get(session_id=session_id, variant__barcode=barcode)
+        item.counted_quantity = qty
+        item.save()
+        return item
+    except StocktakeItem.DoesNotExist:
+        raise ValidationError("Item not found in this stocktake session")
+
+def approve_stocktake(user, session_id):
+    """
+    Finalizes the count.
+    Updates actual inventory to match the counted values.
+    Logs discrepancies.
+    """
+    with transaction.atomic():
+        session = StocktakeSession.objects.select_for_update().get(id=session_id)
+        if session.status != 'in_progress':
+            raise ValidationError("Session already closed")
+            
+        for item in session.items.all():
+            variance = item.counted_quantity - item.expected_quantity
+            
+            if variance != 0:
+                # We need to adjust the real stock
+                variant = ProductVariant.objects.select_for_update().get(id=item.variant.id)
+                
+                # Logic: We overwrite stock to match the count
+                # But we log the *difference*
+                variant.stock_quantity = item.counted_quantity
+                variant.save()
+                
+                action = 'restock' if variance > 0 else 'loss'
+                note = f"Stocktake #{session.id} (Variance: {variance})"
+                
+                InventoryLog.objects.create(
+                    variant=variant,
+                    user=user,
+                    action=action,
+                    quantity_change=variance,
+                    stock_after=item.counted_quantity,
+                    note=note
+                )
+
+        has_variance = False
+        for item in session.items.all():
+            variance = item.counted_quantity - item.expected_quantity
+            if variance != 0:
+                has_variance = True
+
+        session.status = 'completed'
+        session.completed_at = timezone.now()
+        session.save()
+
+        msg = "Stocktake completed with discrepancies." if has_variance else "Stocktake completed perfectly."
+        Notification.objects.create(title="Stocktake Finished", message=msg, link="audit")
+
+        return session
