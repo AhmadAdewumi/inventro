@@ -8,7 +8,8 @@ from .views import (ScanItemView, PurchaseView, InventoryAdjustmentView,
                     PurchaseOrderListView, AuditLogView, BarcodeGeneratorView,
                     UserMetaView, StaffActionView, StaffView,
                     ExportSalesView, ExportInventoryView, DatabaseBackupView, CustomerView,
-                    receipt_view, StocktakeListView, StocktakeDetailView, StoreSettingsView, NotificationView
+                    receipt_view, StocktakeListView, StocktakeDetailView, StoreSettingsView, NotificationView,
+                    OrderDetailView, CustomerDetailView, SupplierDetailView, ProductDetailView
                     )
 
 urlpatterns = [
@@ -62,4 +63,11 @@ urlpatterns = [
     path('api/settings/', StoreSettingsView.as_view(), name='settings'),
     path('api/notifications/', NotificationView.as_view(), name='notifications'),
     path('api/notifications/<int:pk>/read/', NotificationView.as_view(), name='read-notification'),
+
+    # -- deletions
+    path('api/orders/<int:pk>/', OrderDetailView.as_view(), name='order-detail'),
+    path('api/customers/<int:pk>/', CustomerDetailView.as_view(), name='customer-detail'),
+    path('api/suppliers/<int:pk>/', SupplierDetailView.as_view(), name='supplier-detail'),
+    path('api/products/<int:pk>/', ProductDetailView.as_view(), name='product-detail'),
+
 ]

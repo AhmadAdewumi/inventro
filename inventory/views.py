@@ -13,7 +13,7 @@ from django.shortcuts import render, redirect
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
-from rest_framework.authentication import BasicAuthentication, SessionAuthentication
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -43,7 +43,7 @@ class UserMetaView(APIView):
     """
     Returns role of current user to React
     """
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -58,7 +58,7 @@ class ScanItemView(APIView):
     """
     Endpoint: GET /api/scan/<barcode>/
     """
-    authentication_classes = [BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request, barcode):
@@ -79,7 +79,7 @@ class ScanItemView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class PurchaseView(APIView):
-    authentication_classes = [BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -106,7 +106,7 @@ class PurchaseView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class InventoryAdjustmentView(APIView):
-    authentication_classes = [BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -127,7 +127,7 @@ class InventoryAdjustmentView(APIView):
 
 
 class DashboardStatsView(APIView):
-    authentication_classes = [BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -136,7 +136,7 @@ class DashboardStatsView(APIView):
 
 
 class TopSellingProductView(APIView):
-    authentication_classes = [BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -158,7 +158,7 @@ class SupplierListView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class PurchaseOrderView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -175,7 +175,7 @@ class PurchaseOrderView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class ReceivePurchaseOrderView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request, po_id):  # -- po_id --> purchase order id
@@ -192,7 +192,7 @@ class ReceivePurchaseOrderView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class RefundView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -209,7 +209,7 @@ class RefundView(APIView):
 
 
 class OrderListView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -232,12 +232,13 @@ class OrderListView(APIView):
 
 
 class ProductListView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):  # -- search functionality
         query = request.query_params.get('search', '')
-        variants = ProductVariant.objects.select_related('product').all().order_by('-stock_quantity')
+        # Only show active items
+        variants = ProductVariant.objects.select_related('product').filter(is_active=True).order_by('-stock_quantity')
 
         if query:
             variants = variants.filter(
@@ -250,7 +251,7 @@ class ProductListView(APIView):
         return Response(ProductVariantSerializer(variants[:50], many=True).data)
 
     # -- to create product and variants in a GO
-    # -- expected json --> { name, category, price, cost, stock, barcode, sku }, description as an optional fields can be included    
+    # -- expected json --> { name, category, price, cost, stock, barcode, sku }, description as an optional fields can be included
     def post(self, request):
         try:
             variant = create_product_and_variant(request.data)
@@ -262,9 +263,8 @@ class ProductListView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST
             )
 
-
 class PurchaseOrderListView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -273,7 +273,7 @@ class PurchaseOrderListView(APIView):
 
 
 class AuditLogView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request):
@@ -288,7 +288,7 @@ class AuditLogView(APIView):
 
 
 class BarcodeGeneratorView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -313,7 +313,7 @@ class BarcodeGeneratorView(APIView):
 
 
 class PurchaseOrderListView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -325,7 +325,7 @@ class PurchaseOrderListView(APIView):
 # STAFF MANAGEMENT
 # ---------------
 class StaffView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request):
@@ -345,7 +345,7 @@ class StaffView(APIView):
 
 
 class StaffActionView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
 
     def post(self, request, user_id):
@@ -362,7 +362,7 @@ class StaffActionView(APIView):
 
 
 class ExportSalesView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request):
@@ -378,7 +378,7 @@ class ExportSalesView(APIView):
 
 
 class ExportInventoryView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request):
@@ -393,7 +393,7 @@ class ExportInventoryView(APIView):
 
 
 class DatabaseBackupView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request):
@@ -409,7 +409,7 @@ class DatabaseBackupView(APIView):
 
 
 class CustomerView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]  # Cashiers can view/add customers
 
     def get(self, request):
@@ -469,7 +469,7 @@ def receipt_view(request, order_id):
 
 
 class StocktakeListView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request):
@@ -486,7 +486,7 @@ class StocktakeListView(APIView):
 
 
 class StocktakeDetailView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request, pk):
@@ -518,7 +518,7 @@ class StocktakeDetailView(APIView):
 
 # --- SETTINGS VIEW ---
 class StoreSettingsView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -542,7 +542,7 @@ class StoreSettingsView(APIView):
 
 # --- NOTIFICATIONS VIEW ---
 class NotificationView(APIView):
-    authentication_classes = [SessionAuthentication, BasicAuthentication]
+    authentication_classes = [SessionAuthentication]
     permission_classes = [IsAuthenticated]  # Cashiers can see alerts too? Maybe just managers.
 
     def get(self, request):
@@ -560,6 +560,73 @@ class NotificationView(APIView):
         except Notification.DoesNotExist:
             return Response({"error": "Not found"}, status=404)
 
+
+#-- DELETE QUOTES
+class OrderDetailView(APIView):
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            order = Order.objects.get(id=pk)
+            # SAFETY CHECK: Only allow deleting Quotes or Pending orders (not Completed ones)
+            if order.status == 'completed' or order.status == 'refunded':
+                return Response({"error": "Cannot delete completed records. Use Refund instead."}, status=400)
+
+            order.delete()  # Hard delete is okay for quotes/drafts
+            return Response({"message": "Order/Quote deleted successfully"})
+        except Order.DoesNotExist:
+            return Response({"error": "Order not found"}, status=404)
+
+
+#-- DELETE CUSTOMERS
+class CustomerDetailView(APIView):
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            customer = Customer.objects.get(id=pk)
+            #-- Don't delete if they owe us money or have history
+            if customer.orders.exists():
+                return Response({"error": "Cannot delete customer with transaction history."}, status=400)
+
+            customer.delete()
+            return Response({"message": "Customer deleted"})
+        except Customer.DoesNotExist:
+            return Response({"error": "Customer not found"}, status=404)
+
+
+#-- DELETE SUPPLIERS
+class SupplierDetailView(APIView):
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            supplier = Supplier.objects.get(id=pk)
+            #-- Don't delete if we have Purchase Orders from them
+            if supplier.orders.exists():
+                return Response({"error": "Cannot delete supplier with Purchase Orders."}, status=400)
+
+            supplier.delete()
+            return Response({"message": "Supplier deleted"})
+        except Supplier.DoesNotExist:
+            return Response({"error": "Supplier not found"}, status=404)
+
+class ProductDetailView(APIView):
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def delete(self, request, pk):
+        try:
+            variant = ProductVariant.objects.get(id=pk)
+            #-- Soft Delete: We mark as inactive so history remains safe
+            variant.is_active = False
+            variant.save()
+            return Response({"message": "Product deleted successfully"})
+        except ProductVariant.DoesNotExist:
+            return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
 @login_required(login_url='login')
 def store_os_view(request):
