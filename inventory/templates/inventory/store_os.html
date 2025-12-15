@@ -1142,11 +1142,15 @@
     const StaffManager = () => {
         const [staff, setStaff] = useState([]);
         const [showModal, setShowModal] = useState(false);
+
         useEffect(() => {
             loadStaff();
         }, []);
+
         const loadStaff = () => api.get('staff/').then(setStaff);
+
         const toggleStatus = async (id) => {
+            // ... existing toggle logic ...
             if (!confirm("Change status?")) return;
             try {
                 await api.post(`staff/${id}/toggle/`, {});
@@ -1156,6 +1160,20 @@
                 notify(e.message, 'error');
             }
         };
+
+        // --- NEW DELETE FUNCTION ---
+        const handleDelete = async (id) => {
+            if(!confirm("Are you sure you want to delete this staff member?")) return;
+            try {
+                await api.delete(`staff/${id}/`);
+                notify("Staff Deleted");
+                loadStaff();
+            } catch (e) {
+                // This catches the "ProtectedError" we wrote in the backend
+                notify(e.message, 'error');
+            }
+        };
+
         return (
             <div className="h-full flex flex-col gap-6 animate-fade-in">
                 {showModal && <AddStaffModal onClose={() => setShowModal(false)} onSuccess={() => {
@@ -1186,9 +1204,17 @@
                                     <td className="p-4 text-slate-500">{formatDate(u.date_joined)}</td>
                                     <td className="p-4"><StatusBadge status={u.is_active ? 'completed' : 'canceled'}/>
                                     </td>
-                                    <td className="p-4"><Button size="sm" variant="ghost"
-                                                                onClick={() => toggleStatus(u.id)}
-                                                                className={u.is_active ? "text-red-500 hover:bg-red-50" : "text-green-600 hover:bg-green-50"}>{u.is_active ? "Deactivate" : "Activate"}</Button>
+                                    <td className="p-4 flex gap-2">
+                                        <Button size="sm" variant="ghost"
+                                                onClick={() => toggleStatus(u.id)}
+                                                className={u.is_active ? "text-orange-500 hover:bg-orange-50" : "text-green-600 hover:bg-green-50"}>
+                                                {u.is_active ? "Deactivate" : "Activate"}
+                                        </Button>
+
+                                        {/* DELETE BUTTON ADDED */}
+                                        <button onClick={() => handleDelete(u.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all" title="Delete Staff">
+                                            <i className="ph ph-trash text-lg"></i>
+                                        </button>
                                     </td>
                                 </tr>))}</tbody>
                         </table>
@@ -1333,11 +1359,7 @@
         const [input, setInput] = useState("");
         const [scanQty, setScanQty] = useState(1);
         const [cart, setCart] = useState(() => {
-            try {
-                return JSON.parse(localStorage.getItem('pos_cart')) || []
-            } catch {
-                return []
-            }
+            try { return JSON.parse(localStorage.getItem('pos_cart')) || [] } catch { return [] }
         });
         const [loading, setLoading] = useState(false);
         const [showCamera, setShowCamera] = useState(false);
@@ -1346,12 +1368,8 @@
         const [customers, setCustomers] = useState([]);
         const inputRef = useRef(null);
 
-        useEffect(() => {
-            localStorage.setItem('pos_cart', JSON.stringify(cart));
-        }, [cart]);
-        useEffect(() => {
-            if (customerSearch.length > 2) api.get(`customers/?search=${customerSearch}`).then(setCustomers); else setCustomers([]);
-        }, [customerSearch]);
+        useEffect(() => { localStorage.setItem('pos_cart', JSON.stringify(cart)); }, [cart]);
+        useEffect(() => { if (customerSearch.length > 2) api.get(`customers/?search=${customerSearch}`).then(setCustomers); else setCustomers([]); }, [customerSearch]);
 
         const handleScan = async (code) => {
             if (!code) return;
@@ -1360,18 +1378,10 @@
                 const p = await api.get(`scan/${code}/`);
                 setCart(prev => {
                     const ex = prev.find(x => x.barcode === p.barcode);
-                    return ex ? prev.map(x => x.barcode === p.barcode ? {
-                        ...x,
-                        qty: x.qty + scanQty
-                    } : x) : [...prev, {...p, qty: scanQty}];
+                    return ex ? prev.map(x => x.barcode === p.barcode ? { ...x, qty: x.qty + scanQty } : x) : [...prev, {...p, qty: scanQty}];
                 });
                 setInput("");
-            } catch (e) {
-                notify("Product Not Found", 'error');
-            } finally {
-                setLoading(false);
-                setTimeout(() => inputRef.current?.focus(), 50);
-            }
+            } catch (e) { notify("Product Not Found", 'error'); } finally { setLoading(false); setTimeout(() => inputRef.current?.focus(), 50); }
         };
 
         const checkout = async (method) => {
@@ -1394,14 +1404,8 @@
                     const printUrl = `/print/receipt/${res.order_id}/`;
                     window.open(printUrl, 'Receipt', 'width=400,height=600,scrollbars=yes');
                 }
-                setCart([]);
-                setSelectedCustomer(null);
-                setCustomerSearch("");
-            } catch (e) {
-                notify(e.message, 'error');
-            } finally {
-                setLoading(false);
-            }
+                setCart([]); setSelectedCustomer(null); setCustomerSearch("");
+            } catch (e) { notify(e.message, 'error'); } finally { setLoading(false); }
         };
 
         const updateQty = (barcode, newQty) => {
@@ -1411,57 +1415,30 @@
         const total = cart.reduce((a, b) => a + (b.price * b.qty), 0);
 
         return (
-            <div
-                className="h-full flex flex-col md:flex-row gap-6 animate-fade-in overflow-y-auto scroller pb-20 md:pb-0">
-                {showCamera && <CameraModal onScan={(c) => {
-                    setShowCamera(false);
-                    handleScan(c);
-                    notify("Scanned!");
-                }} onClose={() => setShowCamera(false)}/>}
+            <div className="h-full flex flex-col md:flex-row gap-6 animate-fade-in overflow-y-auto scroller pb-20 md:pb-0">
+                {showCamera && <CameraModal onScan={(c) => { setShowCamera(false); handleScan(c); notify("Scanned!"); }} onClose={() => setShowCamera(false)}/>}
                 <div className="flex-grow flex flex-col gap-4 min-h-[500px]">
-                    <div
-                        className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200 flex gap-4 items-center sticky top-0 z-20">
-                        <div className="flex flex-col gap-1 w-16 md:w-24"><label
-                            className="text-xs font-bold text-slate-400">QTY</label><input type="number" min="1"
-                                                                                           value={scanQty}
-                                                                                           onChange={e => setScanQty(Math.max(1, parseInt(e.target.value) || 1))}
-                                                                                           className="w-full text-xl font-bold text-center outline-none border-b-2 border-brand-500"/>
-                        </div>
+                    <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-200 flex gap-4 items-center sticky top-0 z-20">
+                        <div className="flex flex-col gap-1 w-16 md:w-24"><label className="text-xs font-bold text-slate-400">QTY</label><input type="number" min="1" value={scanQty} onChange={e => setScanQty(Math.max(1, parseInt(e.target.value) || 1))} className="w-full text-xl font-bold text-center outline-none border-b-2 border-brand-500"/></div>
                         <div className="h-10 w-px bg-slate-200 mx-2"></div>
                         <i className="ph ph-barcode text-4xl text-slate-300 hidden md:block"></i>
-                        <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
-                               onKeyDown={e => e.key === 'Enter' && handleScan(input.trim())}
-                               className="w-full text-lg md:text-2xl outline-none font-mono placeholder:text-slate-300"
-                               placeholder="Scan..." autoFocus/>
-                        <Button variant="dark" onClick={() => setShowCamera(true)} className="px-3 md:px-4 h-12"><i
-                            className="ph ph-camera text-xl"></i> <span
-                            className="hidden md:inline">Scan</span></Button>
+                        <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleScan(input.trim())} className="w-full text-lg md:text-2xl outline-none font-mono placeholder:text-slate-300" placeholder="Scan..." autoFocus/>
+                        <Button variant="dark" onClick={() => setShowCamera(true)} className="px-3 md:px-4 h-12"><i className="ph ph-camera text-xl"></i> <span className="hidden md:inline">Scan</span></Button>
                     </div>
                     <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
-                        <div
-                            className="p-4 bg-slate-50 border-b font-bold text-xs text-slate-500 uppercase flex tracking-wider">
-                            <span className="flex-grow">Item</span><span className="w-24 text-center">Qty</span><span
-                            className="w-20 text-right">Price</span><span className="w-10"></span></div>
+                        <div className="p-4 bg-slate-50 border-b font-bold text-xs text-slate-500 uppercase flex tracking-wider">
+                            <span className="flex-grow">Item</span><span className="w-24 text-center">Qty</span><span className="w-20 text-right">Price</span><span className="w-10"></span></div>
                         <div className="flex-grow overflow-auto p-2 space-y-1 bg-white min-h-[300px]">
                             {cart.map(i => (
-                                <div key={i.barcode}
-                                     className="flex items-center p-3 hover:bg-slate-50 rounded-lg group transition-colors">
-                                    <div className="flex-grow font-bold text-slate-700 text-sm">{i.product_name} <span
-                                        className="block text-xs text-slate-400 font-normal">{i.sku}</span></div>
+                                <div key={i.barcode} className="flex items-center p-3 hover:bg-slate-50 rounded-lg group transition-colors">
+                                    <div className="flex-grow font-bold text-slate-700 text-sm">{i.product_name} <span className="block text-xs text-slate-400 font-normal">{i.sku}</span></div>
                                     <div className="w-24 flex items-center justify-center gap-2">
-                                        <button onClick={() => updateQty(i.barcode, i.qty - 1)}
-                                                className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">-
-                                        </button>
+                                        <button onClick={() => updateQty(i.barcode, i.qty - 1)} className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">-</button>
                                         <span className="w-6 text-center font-bold text-sm">{i.qty}</span>
-                                        <button onClick={() => updateQty(i.barcode, i.qty + 1)}
-                                                className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">+
-                                        </button>
+                                        <button onClick={() => updateQty(i.barcode, i.qty + 1)} className="w-6 h-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200 text-slate-600">+</button>
                                     </div>
-                                    <div
-                                        className="w-20 text-right font-mono text-slate-600 text-sm">{formatCurrency(i.price * i.qty)}</div>
-                                    <button onClick={() => setCart(cart.filter(x => x.barcode !== i.barcode))}
-                                            className="w-10 text-slate-300 hover:text-red-500"><i
-                                        className="ph ph-trash text-xl"></i></button>
+                                    <div className="w-20 text-right font-mono text-slate-600 text-sm">{formatCurrency(i.price * i.qty)}</div>
+                                    <button onClick={() => setCart(cart.filter(x => x.barcode !== i.barcode))} className="w-10 text-slate-300 hover:text-red-500"><i className="ph ph-trash text-xl"></i></button>
                                 </div>
                             ))}
                         </div>
@@ -1470,35 +1447,18 @@
                 <div className="w-full md:w-80 flex flex-col gap-4">
                     <Card className="border-none shadow-xl bg-white">
                         <div className="mb-4 relative">
-                            <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Customer
-                                (Optional)</label>
+                            <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Customer (Optional)</label>
                             {selectedCustomer ? (
-                                <div
-                                    className="p-3 bg-brand-50 border border-brand-200 rounded-lg flex justify-between items-center">
-                                    <div>
-                                        <div className="font-bold text-brand-700">{selectedCustomer.name}</div>
-                                        <div className="text-xs text-brand-500">{selectedCustomer.phone}</div>
-                                    </div>
-                                    <button onClick={() => {
-                                        setSelectedCustomer(null);
-                                        setCustomerSearch("")
-                                    }} className="text-brand-400 hover:text-brand-600"><i
-                                        className="ph ph-x-circle text-xl"></i></button>
+                                <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg flex justify-between items-center">
+                                    <div><div className="font-bold text-brand-700">{selectedCustomer.name}</div><div className="text-xs text-brand-500">{selectedCustomer.phone}</div></div>
+                                    <button onClick={() => { setSelectedCustomer(null); setCustomerSearch("") }} className="text-brand-400 hover:text-brand-600"><i className="ph ph-x-circle text-xl"></i></button>
                                 </div>
                             ) : (
                                 <div>
-                                    <input className="w-full p-2 border rounded" placeholder="Search customer..."
-                                           value={customerSearch} onChange={e => setCustomerSearch(e.target.value)}/>
+                                    <input className="w-full p-2 border rounded" placeholder="Search customer..." value={customerSearch} onChange={e => setCustomerSearch(e.target.value)}/>
                                     {customers.length > 0 && (
-                                        <div
-                                            className="absolute left-0 right-0 bg-white shadow-xl border rounded mt-1 z-50 max-h-48 overflow-auto">
-                                            {customers.map(c => (<div key={c.id} onClick={() => {
-                                                setSelectedCustomer(c);
-                                                setCustomers([])
-                                            }} className="p-2 hover:bg-slate-50 cursor-pointer border-b text-sm">
-                                                <div className="font-bold">{c.name}</div>
-                                                <div className="text-xs text-slate-500">{c.phone}</div>
-                                            </div>))}
+                                        <div className="absolute left-0 right-0 bg-white shadow-xl border rounded mt-1 z-50 max-h-48 overflow-auto">
+                                            {customers.map(c => (<div key={c.id} onClick={() => { setSelectedCustomer(c); setCustomers([]) }} className="p-2 hover:bg-slate-50 cursor-pointer border-b text-sm"><div className="font-bold">{c.name}</div><div className="text-xs text-slate-500">{c.phone}</div></div>))}
                                         </div>
                                     )}
                                 </div>
@@ -1506,23 +1466,18 @@
                         </div>
                         <div className="border-t pt-4">
                             <div className="text-slate-400 text-xs font-bold uppercase tracking-widest">Total Due</div>
-                            <div
-                                className="text-4xl font-mono font-bold mt-1 tracking-tight text-slate-800">{formatCurrency(total)}</div>
+                            <div className="text-4xl font-mono font-bold mt-1 tracking-tight text-slate-800">{formatCurrency(total)}</div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 mt-6">
-                            <Button onClick={() => checkout('cash')} disabled={!cart.length || loading}
-                                    className="col-span-2 py-4 text-lg bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">CASH</Button>
-                            <Button onClick={() => checkout('card')} disabled={!cart.length || loading}
-                                    className="py-3 bg-blue-600 hover:bg-blue-500">CARD</Button>
-                            <Button onClick={() => checkout('transfer')} disabled={!cart.length || loading}
-                                    className="py-3 bg-purple-600 hover:bg-purple-500">TRANSFER</Button>
-                            {selectedCustomer &&
-                                <Button onClick={() => checkout('debt')} disabled={!cart.length || loading}
-                                        className="col-span-2 py-3 bg-slate-700 hover:bg-slate-600 border border-slate-600">PAY
-                                    LATER (DEBT)</Button>}
-                            <Button onClick={() => checkout('none')} disabled={!cart.length || loading}
-                                    className="col-span-2 py-2 bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200 text-xs uppercase font-bold tracking-wider mt-2"><i
-                                className="ph ph-file-text mr-2"></i> Save as Quote</Button>
+                            <Button onClick={() => checkout('cash')} disabled={!cart.length || loading} className="col-span-2 py-4 text-lg bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">CASH</Button>
+                            <Button onClick={() => checkout('card')} disabled={!cart.length || loading} className="py-3 bg-blue-600 hover:bg-blue-500">CARD</Button>
+                            <Button onClick={() => checkout('transfer')} disabled={!cart.length || loading} className="py-3 bg-purple-600 hover:bg-purple-500">TRANSFER</Button>
+                            {selectedCustomer && <Button onClick={() => checkout('debt')} disabled={!cart.length || loading} className="col-span-2 py-3 bg-slate-700 hover:bg-slate-600 border border-slate-600">PAY LATER (DEBT)</Button>}
+
+                            {/* UPDATED BUTTON: Vibrant Indigo style for visibility */}
+                            <Button onClick={() => checkout('none')} disabled={!cart.length || loading} className="col-span-2 py-3 bg-indigo-600 text-white hover:bg-indigo-500 shadow-md font-bold tracking-wide mt-2">
+                                <i className="ph ph-file-text mr-2"></i> Save as Quote
+                            </Button>
                         </div>
                     </Card>
                 </div>
@@ -1698,10 +1653,13 @@
     const StocktakeManager = () => {
         const [sessions, setSessions] = useState([]);
         const [activeSession, setActiveSession] = useState(null);
+
         useEffect(() => {
             loadSessions();
         }, []);
+
         const loadSessions = () => api.get('stocktake/').then(setSessions);
+
         const startSession = async () => {
             const note = prompt("Enter a note for this stocktake (e.g. End of Month):");
             if (note === null) return;
@@ -1715,44 +1673,50 @@
             }
         };
 
+        // --- NEW DELETE FUNCTION ---
+        const deleteSession = async (id, e) => {
+            e.stopPropagation(); // Stop row click
+            if(!confirm("Discard this stocktake session?")) return;
+            try {
+                await api.delete(`stocktake/${id}/`);
+                notify("Session Discarded");
+                loadSessions();
+            } catch (e) {
+                notify(e.message, 'error');
+            }
+        };
+
         const SessionDetail = ({session, onClose}) => {
+            // ... (Keep existing SessionDetail logic exactly as it was) ...
+            // For brevity in this snippet, I am focusing on the Manager List View below.
+            // You can keep the SessionDetail inner component code from the previous version.
             const [items, setItems] = useState(session.items || []);
             const [filter, setFilter] = useState('');
             const [inputCode, setInputCode] = useState("");
             const [showCamera, setShowCamera] = useState(false);
             const inputRef = useRef(null);
-            useEffect(() => {
-                inputRef.current?.focus();
-            }, []);
+            useEffect(() => { inputRef.current?.focus(); }, []);
+
             const handleScan = async (code) => {
                 const item = items.find(i => i.barcode === code);
                 if (!item) return notify("Item not found in this session list", 'error');
-                const newQty = item.counted_quantity + 1;
-                updateCount(item, newQty);
+                updateCount(item, item.counted_quantity + 1);
                 setInputCode("");
             };
 
-            // --- FIX: Input Validation Added Here ---
             const updateCount = async (item, val) => {
                 let qty = val;
-
-                // If the user types in the input (string), we validate it
                 if (typeof val === 'string') {
-                    if (val === "") qty = 0; // Handle empty backspace as 0
-                    else if (!/^\d+$/.test(val)) return; // Strictly ignore non-digits (letters)
+                    if (val === "") qty = 0;
+                    else if (!/^\d+$/.test(val)) return;
                     else qty = parseInt(val, 10);
                 }
-
-                // Safety check for negatives
                 if (qty < 0) qty = 0;
 
                 const updatedItems = items.map(i => i.id === item.id ? {...i, counted_quantity: qty} : i);
                 setItems(updatedItems);
-                try {
-                    await api.post(`stocktake/${session.id}/`, {barcode: item.barcode, quantity: qty});
-                } catch (e) {
-                    notify("Failed to save count", 'error');
-                }
+                try { await api.post(`stocktake/${session.id}/`, {barcode: item.barcode, quantity: qty}); }
+                catch (e) { notify("Failed to save count", 'error'); }
             };
 
             const finalize = async () => {
@@ -1761,74 +1725,45 @@
                     await api.put(`stocktake/${session.id}/`, {});
                     notify("Stocktake Finalized!");
                     onClose();
-                } catch (e) {
-                    notify(e.message, 'error');
-                }
+                } catch (e) { notify(e.message, 'error'); }
             };
+
             const filteredItems = items.filter(i => i.product_name.toLowerCase().includes(filter.toLowerCase()) || i.barcode.includes(filter));
             const totalVar = items.reduce((a, i) => a + (i.counted_quantity - i.expected_quantity), 0);
 
             return (
-                <div className="fixed inset-0 bg-white z-50 flex flex-col animate-fade-in">{showCamera &&
-                    <CameraModal onScan={(c) => {
-                        setShowCamera(false);
-                        handleScan(c);
-                        notify("Scanned!");
-                    }} onClose={() => setShowCamera(false)}/>}
+                <div className="fixed inset-0 bg-white z-50 flex flex-col animate-fade-in">
+                    {showCamera && <CameraModal onScan={(c) => { setShowCamera(false); handleScan(c); notify("Scanned!"); }} onClose={() => setShowCamera(false)}/>}
                     <div className="bg-slate-900 text-white p-4 flex justify-between items-center shadow-lg">
-                        <div><h2 className="text-xl font-bold">Stocktake #{session.id}</h2><span
-                            className="text-slate-400 text-sm">Started: {formatDate(session.created_at)}</span></div>
-                        <div className="flex gap-3"><Button variant="ghost" className="text-white hover:bg-white/10"
-                                                            onClick={onClose}>Close</Button>{session.status === 'in_progress' &&
-                            <Button variant="success" onClick={finalize}>Finalize & Adjust Stock</Button>}</div>
+                        <div><h2 className="text-xl font-bold">Stocktake #{session.id}</h2><span className="text-slate-400 text-sm">Started: {formatDate(session.created_at)}</span></div>
+                        <div className="flex gap-3"><Button variant="ghost" className="text-white hover:bg-white/10" onClick={onClose}>Close</Button>{session.status === 'in_progress' && <Button variant="success" onClick={finalize}>Finalize & Adjust Stock</Button>}</div>
                     </div>
-                    <div
-                        className="flex-grow flex flex-col p-6 gap-4 bg-slate-50">{session.status === 'in_progress' && (
-                        <div className="bg-white p-4 rounded-xl shadow-sm border flex gap-4 items-center"><i
-                            className="ph ph-barcode text-2xl text-slate-400"></i><input ref={inputRef}
-                                                                                         value={inputCode}
-                                                                                         onChange={e => setInputCode(e.target.value)}
-                                                                                         onKeyDown={e => e.key === 'Enter' && handleScan(inputCode)}
-                                                                                         className="flex-grow text-lg outline-none font-mono"
-                                                                                         placeholder="Scan item to count..."
-                                                                                         autoFocus/><Button
-                            variant="dark" onClick={() => setShowCamera(true)}><i
-                            className="ph ph-camera"></i> Scan</Button></div>)}
-                        <div className="flex justify-between items-center"><input placeholder="Filter items..."
-                                                                                  className="p-2 rounded border"
-                                                                                  value={filter}
-                                                                                  onChange={e => setFilter(e.target.value)}/>
-                            <div
-                                className={`font-bold px-3 py-1 rounded ${totalVar === 0 ? 'bg-gray-200 text-gray-600' : totalVar < 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>Net
-                                Variance: {totalVar > 0 ? '+' : ''}{totalVar}</div>
+                    <div className="flex-grow flex flex-col p-6 gap-4 bg-slate-50">
+                        {session.status === 'in_progress' && (
+                        <div className="bg-white p-4 rounded-xl shadow-sm border flex gap-4 items-center">
+                            <i className="ph ph-barcode text-2xl text-slate-400"></i>
+                            <input ref={inputRef} value={inputCode} onChange={e => setInputCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleScan(inputCode)} className="flex-grow text-lg outline-none font-mono" placeholder="Scan item to count..." autoFocus/>
+                            <Button variant="dark" onClick={() => setShowCamera(true)}><i className="ph ph-camera"></i> Scan</Button>
+                        </div>)}
+                        <div className="flex justify-between items-center">
+                            <input placeholder="Filter items..." className="p-2 rounded border" value={filter} onChange={e => setFilter(e.target.value)}/>
+                            <div className={`font-bold px-3 py-1 rounded ${totalVar === 0 ? 'bg-gray-200 text-gray-600' : totalVar < 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>Net Variance: {totalVar > 0 ? '+' : ''}{totalVar}</div>
                         </div>
                         <div className="flex-grow overflow-auto bg-white rounded-xl border shadow-sm">
                             <table className="w-full text-left text-sm">
                                 <thead className="bg-slate-100 font-bold sticky top-0">
-                                <tr>
-                                    <th className="p-3">Product</th>
-                                    <th className="p-3 text-right">Expected</th>
-                                    <th className="p-3 text-center w-32">Counted</th>
-                                    <th className="p-3 text-right">Variance</th>
-                                </tr>
+                                <tr><th className="p-3">Product</th><th className="p-3 text-right">Expected</th><th className="p-3 text-center w-32">Counted</th><th className="p-3 text-right">Variance</th></tr>
                                 </thead>
                                 <tbody className="divide-y">{filteredItems.map(i => {
                                     const variance = i.counted_quantity - i.expected_quantity;
                                     return (<tr key={i.id} className="hover:bg-slate-50">
-                                        <td className="p-3 font-medium">{i.product_name} <span
-                                            className="text-xs text-slate-400 block">{i.barcode}</span></td>
+                                        <td className="p-3 font-medium">{i.product_name} <span className="text-xs text-slate-400 block">{i.barcode}</span></td>
                                         <td className="p-3 text-right text-slate-500">{i.expected_quantity}</td>
                                         <td className="p-3 text-center">{session.status === 'in_progress' ? (
                                             <div className="flex items-center justify-center gap-1">
-                                                <button onClick={() => updateCount(i, i.counted_quantity - 1)}
-                                                        className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">-
-                                                </button>
-                                                <input className="w-12 text-center font-bold border rounded p-1"
-                                                       value={i.counted_quantity}
-                                                       onChange={e => updateCount(i, e.target.value)}/>
-                                                <button onClick={() => updateCount(i, i.counted_quantity + 1)}
-                                                        className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">+
-                                                </button>
+                                                <button onClick={() => updateCount(i, i.counted_quantity - 1)} className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">-</button>
+                                                <input className="w-12 text-center font-bold border rounded p-1" value={i.counted_quantity} onChange={e => updateCount(i, e.target.value)}/>
+                                                <button onClick={() => updateCount(i, i.counted_quantity + 1)} className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">+</button>
                                             </div>) : <span className="font-bold">{i.counted_quantity}</span>}</td>
                                         <td className={`p-3 text-right font-bold ${variance === 0 ? 'text-slate-300' : variance < 0 ? 'text-red-500' : 'text-green-500'}`}>{variance > 0 ? '+' : ''}{variance}</td>
                                     </tr>)
@@ -1841,14 +1776,12 @@
         };
 
         return (
-            <div className="h-full flex flex-col gap-6 animate-fade-in">{activeSession &&
-                <SessionDetail session={activeSession} onClose={() => {
-                    setActiveSession(null);
-                    loadSessions();
-                }}/>}
-                <div className="flex justify-between items-center"><h1
-                    className="text-2xl font-bold text-slate-800">Stocktake</h1><Button onClick={startSession}><i
-                    className="ph ph-plus"></i> New Session</Button></div>
+            <div className="h-full flex flex-col gap-6 animate-fade-in">
+                {activeSession && <SessionDetail session={activeSession} onClose={() => { setActiveSession(null); loadSessions(); }}/>}
+                <div className="flex justify-between items-center">
+                    <h1 className="text-2xl font-bold text-slate-800">Stocktake</h1>
+                    <Button onClick={startSession}><i className="ph ph-plus"></i> New Session</Button>
+                </div>
                 <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
                     <div className="overflow-auto scroller">
                         <table className="w-full text-left text-sm">
@@ -1859,20 +1792,30 @@
                                 <th className="p-4">Status</th>
                                 <th className="p-4">Note</th>
                                 <th className="p-4">By</th>
+                                <th className="p-4"></th>
                             </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">{sessions.map(s => <tr key={s.id}
-                                                                                                onClick={() => api.get(`stocktake/${s.id}/`).then(setActiveSession)}
-                                                                                                className="hover:bg-slate-50 cursor-pointer transition-colors">
-                                <td className="p-4 font-mono font-bold text-brand-600">#{s.id}</td>
-                                <td className="p-4 text-slate-500">{formatDate(s.created_at)}</td>
-                                <td className="p-4"><StatusBadge status={s.status}/></td>
-                                <td className="p-4 text-slate-600 italic">{s.note}</td>
-                                <td className="p-4 font-medium">{s.created_by_name}</td>
-                            </tr>)}</tbody>
+                            <tbody className="divide-y divide-slate-100">{sessions.map(s => (
+                                <tr key={s.id} onClick={() => api.get(`stocktake/${s.id}/`).then(setActiveSession)} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                                    <td className="p-4 font-mono font-bold text-brand-600">#{s.id}</td>
+                                    <td className="p-4 text-slate-500">{formatDate(s.created_at)}</td>
+                                    <td className="p-4"><StatusBadge status={s.status}/></td>
+                                    <td className="p-4 text-slate-600 italic">{s.note}</td>
+                                    <td className="p-4 font-medium">{s.created_by_name}</td>
+                                    <td className="p-4 text-right">
+                                        {/* DELETE BUTTON: Only shows for In Progress sessions */}
+                                        {s.status === 'in_progress' && (
+                                            <button onClick={(e) => deleteSession(s.id, e)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all" title="Discard Session">
+                                                <i className="ph ph-trash text-lg"></i>
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}</tbody>
                         </table>
                     </div>
-                </Card></div>
+                </Card>
+            </div>
         );
     };
 

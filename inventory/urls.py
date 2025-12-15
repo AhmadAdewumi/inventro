@@ -9,7 +9,7 @@ from .views import (ScanItemView, PurchaseView, InventoryAdjustmentView,
                     UserMetaView, StaffActionView, StaffView,
                     ExportSalesView, ExportInventoryView, DatabaseBackupView, CustomerView,
                     receipt_view, StocktakeListView, StocktakeDetailView, StoreSettingsView, NotificationView,
-                    OrderDetailView, CustomerDetailView, SupplierDetailView, ProductDetailView
+                    OrderDetailView, CustomerDetailView, SupplierDetailView, ProductDetailView, StaffDetailView
                     )
 
 urlpatterns = [
@@ -69,5 +69,5 @@ urlpatterns = [
     path('api/customers/<int:pk>/', CustomerDetailView.as_view(), name='customer-detail'),
     path('api/suppliers/<int:pk>/', SupplierDetailView.as_view(), name='supplier-detail'),
     path('api/products/<int:pk>/', ProductDetailView.as_view(), name='product-detail'),
-
+    path('api/staff/<int:pk>/', StaffDetailView.as_view(), name='staff-detail'),
 ]

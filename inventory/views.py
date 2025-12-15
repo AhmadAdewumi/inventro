@@ -7,7 +7,7 @@ from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
-from django.db.models import Q
+from django.db.models import Q, ProtectedError
 from django.http import HttpResponse
 from django.shortcuts import render, redirect
 from django.utils.decorators import method_decorator
@@ -515,6 +515,21 @@ class StocktakeDetailView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=400)
 
+    def delete(self, request, pk):
+        try:
+            session = StocktakeSession.objects.get(id=pk)
+
+            if session.status == 'completed':
+                return Response({
+                    "error": "Cannot delete a completed stocktake. It is part of the permanent audit trail."
+                }, status=400)
+
+            session.delete()
+            return Response({"message": "Stocktake session discarded successfully"})
+
+        except StocktakeSession.DoesNotExist:
+            return Response({"error": "Session not found"}, status=404)
+
 
 # --- SETTINGS VIEW ---
 class StoreSettingsView(APIView):
@@ -627,6 +642,32 @@ class ProductDetailView(APIView):
             return Response({"message": "Product deleted successfully"})
         except ProductVariant.DoesNotExist:
             return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class StaffDetailView(APIView):
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def delete(self, request, pk):
+        try:
+            user = User.objects.get(id=pk)
+
+            #-- Protect the Owner
+            if user.is_superuser:
+                return Response({"error": "Cannot delete the Superuser/Owner."}, status=400)
+
+            #-- Attempt Deletion
+            user.delete()
+            return Response({"message": "Staff deleted successfully"})
+
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=404)
+        except ProtectedError:
+            #-- Handle Foreign Key Constraints (Safety Net)
+            return Response({
+                "error": "Cannot delete staff member who has created orders or logs. Please deactivate them instead."
+            }, status=400)
+
 
 @login_required(login_url='login')
 def store_os_view(request):
