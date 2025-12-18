@@ -1,13 +1,14 @@
 import io
 import traceback
 import uuid
+from django.utils import timezone
 from os import name
 
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
-from django.db.models import Q, ProtectedError
+from django.db.models import Q, ProtectedError, Sum, Count
 from django.http import HttpResponse
 from django.shortcuts import render, redirect
 from django.utils.decorators import method_decorator
@@ -668,6 +669,35 @@ class StaffDetailView(APIView):
                 "error": "Cannot delete staff member who has created orders or logs. Please deactivate them instead."
             }, status=400)
 
+class SalesReportView(APIView):
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated, IsManager]
+
+    def get(self, request):
+        # Default to today
+        start_date = request.query_params.get('start', timezone.now().date())
+        end_date = request.query_params.get('end', timezone.now().date())
+
+        # Filter completed orders in range
+        orders = Order.objects.filter(
+            status='completed',
+            created_at__date__range=[start_date, end_date]
+        ).order_by('-created_at')
+
+        # 1. Total Revenue
+        total_revenue = orders.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+
+        # 2. Breakdown by Payment Method (Cash vs Card vs Transfer)
+        method_breakdown = orders.values('payment_method').annotate(
+            total=Sum('total_amount'),
+            count=Count('id')
+        )
+
+        return Response({
+            "total_revenue": total_revenue,
+            "breakdown": method_breakdown,
+            "orders": OrderSerializer(orders, many=True).data
+        })
 
 @login_required(login_url='login')
 def store_os_view(request):

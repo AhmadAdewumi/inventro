@@ -658,123 +658,208 @@
     // --- UPDATED: DASHBOARD (Responsive) ---
     const Dashboard = ({onNavigate}) => {
         const [stats, setStats] = useState(null);
+        const [topSelling, setTopSelling] = useState([]);
         const chartRef = useRef(null);
         const chartInstance = useRef(null);
 
         useEffect(() => {
-            api.get('reports/dashboard/').then(data => {
-                setStats(data);
-                setTimeout(() => {
-                    if (chartRef.current && typeof Chart !== 'undefined') {
-                        if (chartInstance.current) chartInstance.current.destroy();
-                        chartInstance.current = new Chart(chartRef.current, {
-                            type: 'line',
-                            data: {
-                                labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                                datasets: [{
-                                    label: 'Revenue',
-                                    data: [1200, 1500, 900, 1400, 1100, 800, data.revenue || 0],
-                                    borderColor: '#2563eb',
-                                    backgroundColor: (ctx) => {
-                                        const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 200);
-                                        gradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
-                                        gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
-                                        return gradient;
-                                    },
-                                    fill: true,
-                                    tension: 0.4,
-                                    pointRadius: 4,
-                                    pointHoverRadius: 6
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: {legend: {display: false}},
-                                scales: {
-                                    y: {beginAtZero: true, grid: {borderDash: [2, 4]}},
-                                    x: {grid: {display: false}}
-                                }
-                            }
-                        });
-                    }
-                }, 50);
-            });
+            // Fetch Dashboard Stats
+            api.get('reports/dashboard/').then(setStats);
+
+            // Fetch Top Selling Items (Utilizing your existing API)
+            api.get('reports/top-selling/').then(setTopSelling);
+
             return () => {
                 if (chartInstance.current) chartInstance.current.destroy();
             }
         }, []);
 
-        if (!stats) return <div className="p-10 text-slate-400 flex items-center gap-2"><i
-            className="ph ph-spinner animate-spin"></i> Loading...</div>;
+        // Initialize Chart only after stats are loaded
+        useEffect(() => {
+            if (stats && chartRef.current && typeof Chart !== 'undefined') {
+                if (chartInstance.current) chartInstance.current.destroy();
+
+                const ctx = chartRef.current.getContext('2d');
+                const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+                gradient.addColorStop(0, 'rgba(37, 99, 235, 0.1)'); // Brand Blue
+                gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
+
+                chartInstance.current = new Chart(chartRef.current, {
+                    type: 'line',
+                    data: {
+                        // Simulating a week view for UI demo (Backend would ideally provide history)
+                        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Today'],
+                        datasets: [{
+                            label: 'Revenue Trend',
+                            data: [15000, 18000, 12000, 22000, 19000, 25000, stats.revenue || 0],
+                            borderColor: '#2563eb',
+                            borderWidth: 2,
+                            backgroundColor: gradient,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#ffffff',
+                            pointBorderColor: '#2563eb',
+                            pointBorderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {display: false},
+                            tooltip: {
+                                backgroundColor: '#1e293b',
+                                padding: 12,
+                                titleFont: { size: 13 },
+                                bodyFont: { size: 13 },
+                                displayColors: false,
+                                callbacks: {
+                                    label: (context) => formatCurrency(context.raw)
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: {borderDash: [4, 4], color: '#f1f5f9'},
+                                ticks: { font: {size: 10}, color: '#64748b', callback: (val) => '₦' + val }
+                            },
+                            x: {
+                                grid: {display: false},
+                                ticks: { font: {size: 10}, color: '#64748b' }
+                            }
+                        }
+                    }
+                });
+            }
+        }, [stats]);
+
+        if (!stats) return <div className="h-full flex items-center justify-center text-slate-400 gap-2"><i className="ph ph-spinner animate-spin text-xl"></i> Loading Overview...</div>;
 
         return (
             <div className="space-y-6 animate-fade-in h-full flex flex-col pb-4 overflow-y-auto scroller">
-                <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-2">
-                    <div><h1 className="text-3xl font-bold text-slate-800 tracking-tight">Overview</h1><p
-                        className="text-slate-500">Store performance for {stats.date}</p></div>
-                </header>
-                {/* Responsive Grid: 1 col on mobile, 3 on desktop */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <Card
-                        className="border-l-4 border-l-emerald-500 group hover:-translate-y-1 transition-transform duration-300">
-                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Revenue</div>
-                        <div className="text-4xl font-bold text-slate-800"><CountUp end={stats.revenue || 0}
-                                                                                    prefix="₦"/></div>
+
+                {/* Header */}
+                <div className="flex justify-between items-end">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Overview</h1>
+                        <p className="text-sm text-slate-500">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    </div>
+                    <div className="hidden md:block">
+                        <Button size="sm" onClick={() => onNavigate('pos')}><i className="ph ph-shopping-cart"></i> Go to POS</Button>
+                    </div>
+                </div>
+
+                {/* KPI Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Today's Revenue</p>
+                                <h3 className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(stats.revenue || 0)}</h3>
+                            </div>
+                            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><i className="ph ph-currency-dollar text-xl"></i></div>
+                        </div>
                     </Card>
-                    <Card
-                        className={`border-l-4 ${stats.profit >= 0 ? 'border-l-brand-500' : 'border-l-red-500'} group hover:-translate-y-1 transition-transform duration-300`}>
-                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Net Profit</div>
-                        <div className={`text-4xl font-bold ${stats.profit >= 0 ? 'text-brand-600' : 'text-red-600'}`}>
-                            <CountUp end={stats.profit || 0} prefix="₦"/></div>
+                    <Card className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Net Profit</p>
+                                <h3 className={`text-2xl font-bold mt-1 ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                    {formatCurrency(stats.profit || 0)}
+                                </h3>
+                            </div>
+                            <div className={`p-2 rounded-lg ${stats.profit >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                                <i className="ph ph-trend-up text-xl"></i>
+                            </div>
+                        </div>
                     </Card>
-                    <Card
-                        className="border-l-4 border-l-orange-500 group hover:-translate-y-1 transition-transform duration-300">
-                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Low Stock</div>
-                        <div className="text-4xl font-bold text-orange-500">{stats.low_stock_items || 0}</div>
+                    <Card className="border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Low Stock Alerts</p>
+                                <h3 className="text-2xl font-bold text-slate-800 mt-1">{stats.low_stock_items || 0}</h3>
+                            </div>
+                            <div className="p-2 bg-orange-50 text-orange-600 rounded-lg"><i className="ph ph-warning text-xl"></i></div>
+                        </div>
+                    </Card>
+                    <Card className="border-slate-200 shadow-sm hover:shadow-md transition-shadow p-5 bg-slate-800 text-white">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Inventory Value</p>
+                                <h3 className="text-xl font-mono mt-1 text-white opacity-90">View Report &rarr;</h3>
+                            </div>
+                            <div className="p-2 bg-white/10 text-white rounded-lg cursor-pointer" onClick={() => api.download('export/inventory/')}>
+                                <i className="ph ph-download-simple text-xl"></i>
+                            </div>
+                        </div>
                     </Card>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow">
-                    <Card className="col-span-1 md:col-span-2 flex flex-col min-h-[300px]"><h3
-                        className="font-bold text-slate-700 mb-4">Revenue Trend</h3>
-                        <div className="flex-grow relative min-h-[250px]">
+
+                {/* Main Content Area */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-grow">
+
+                    {/* Left: Performance Chart */}
+                    <Card className="lg:col-span-2 flex flex-col min-h-[350px] shadow-sm border border-slate-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-slate-700">Revenue Performance</h3>
+                            <select className="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1 outline-none text-slate-600">
+                                <option>Last 7 Days</option>
+                            </select>
+                        </div>
+                        <div className="flex-grow relative w-full">
                             <canvas ref={chartRef}></canvas>
                         </div>
                     </Card>
-                    <div className="flex flex-col gap-6">
-                        <DarkCard className="flex flex-col justify-center gap-4 relative overflow-hidden flex-grow">
-                            <h3 className="font-bold text-slate-300 z-10">Quick Actions</h3>
-                            <button onClick={() => onNavigate('inventory', true)}
-                                    className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer">
-                                <i className="ph ph-plus-circle text-2xl text-brand-400"></i> <span
-                                className="font-medium">Add Product</span></button>
-                            <button onClick={() => onNavigate('procurement', true)}
-                                    className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer">
-                                <i className="ph ph-truck text-2xl text-emerald-400"></i> <span className="font-medium">Create Purchase Order</span>
-                            </button>
-                            <button onClick={() => api.download('print-labels/')}
-                                    className="w-full text-left p-4 rounded-xl bg-white/10 hover:bg-white/20 transition flex items-center gap-3 z-10 cursor-pointer">
-                                <i className="ph ph-printer text-2xl text-orange-400"></i> <span
-                                className="font-medium">Print Labels</span></button>
-                            <i className="ph ph-lightning absolute -bottom-6 -right-6 text-9xl opacity-5"></i>
-                        </DarkCard>
 
-                        <Card className="flex flex-col gap-2">
-                            <h3 className="font-bold text-slate-700 text-xs uppercase mb-2">Reports & Data</h3>
-                            <button onClick={() => api.download('export/sales/')}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-slate-50 rounded text-slate-600 text-sm transition">
-                                <i className="ph ph-file-csv text-green-600 text-lg"></i> Sales Ledger (CSV)
-                            </button>
-                            <button onClick={() => api.download('export/inventory/')}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-slate-50 rounded text-slate-600 text-sm transition">
-                                <i className="ph ph-file-csv text-blue-600 text-lg"></i> Inventory Value (CSV)
-                            </button>
-                            <button onClick={() => api.download('backup/')}
-                                    className="w-full flex items-center gap-2 p-2 hover:bg-slate-50 rounded text-slate-600 text-sm transition">
-                                <i className="ph ph-database text-orange-600 text-lg"></i> Download Backup (JSON)
-                            </button>
-                        </Card>
-                    </div>
+                    {/* Right: Top Selling Items */}
+                    <Card className="flex flex-col shadow-sm border border-slate-200 h-full max-h-[400px]">
+                        <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+                            <i className="ph ph-trophy text-amber-500"></i> Top Selling Today
+                        </h3>
+                        <div className="overflow-y-auto scroller flex-grow -mx-2 px-2">
+                            {topSelling.length === 0 ? (
+                                <div className="text-center text-slate-400 text-sm py-10">No sales yet today.</div>
+                            ) : (
+                                <table className="w-full text-sm text-left">
+                                    <tbody className="divide-y divide-slate-100">
+                                        {topSelling.map((item, idx) => (
+                                            <tr key={idx}>
+                                                <td className="py-3">
+                                                    <div className="font-medium text-slate-700 truncate max-w-[120px]">{item.variant__product__name}</div>
+                                                    <div className="text-xs text-slate-400">{item.variant__name_suffix}</div>
+                                                </td>
+                                                <td className="py-3 text-right">
+                                                    <div className="font-bold text-slate-700">{item.total_sold} <span className="text-[10px] font-normal text-slate-400">sold</span></div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                        <button onClick={() => onNavigate('sales')} className="w-full mt-4 py-2 text-xs font-bold text-brand-600 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors">
+                            View Full Sales Ledger
+                        </button>
+                    </Card>
+                </div>
+
+                {/* Bottom: Quick Actions Strip */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <button onClick={() => onNavigate('inventory', true)} className="flex items-center justify-center gap-2 p-3 bg-white border border-slate-200 rounded-xl hover:border-brand-500 hover:text-brand-600 hover:shadow-md transition-all text-slate-600 font-medium text-sm">
+                        <i className="ph ph-plus-circle text-lg"></i> Add Product
+                    </button>
+                    <button onClick={() => onNavigate('procurement', true)} className="flex items-center justify-center gap-2 p-3 bg-white border border-slate-200 rounded-xl hover:border-emerald-500 hover:text-emerald-600 hover:shadow-md transition-all text-slate-600 font-medium text-sm">
+                        <i className="ph ph-truck text-lg"></i> Create PO
+                    </button>
+                    <button onClick={() => api.download('print-labels/')} className="flex items-center justify-center gap-2 p-3 bg-white border border-slate-200 rounded-xl hover:border-orange-500 hover:text-orange-600 hover:shadow-md transition-all text-slate-600 font-medium text-sm">
+                        <i className="ph ph-barcode text-lg"></i> Print Labels
+                    </button>
+                    <button onClick={() => api.download('backup/')} className="flex items-center justify-center gap-2 p-3 bg-white border border-slate-200 rounded-xl hover:border-purple-500 hover:text-purple-600 hover:shadow-md transition-all text-slate-600 font-medium text-sm">
+                        <i className="ph ph-database text-lg"></i> Backup Data
+                    </button>
                 </div>
             </div>
         );
@@ -1163,7 +1248,7 @@
 
         // --- NEW DELETE FUNCTION ---
         const handleDelete = async (id) => {
-            if(!confirm("Are you sure you want to delete this staff member?")) return;
+            if (!confirm("Are you sure you want to delete this staff member?")) return;
             try {
                 await api.delete(`staff/${id}/`);
                 notify("Staff Deleted");
@@ -1208,11 +1293,13 @@
                                         <Button size="sm" variant="ghost"
                                                 onClick={() => toggleStatus(u.id)}
                                                 className={u.is_active ? "text-orange-500 hover:bg-orange-50" : "text-green-600 hover:bg-green-50"}>
-                                                {u.is_active ? "Deactivate" : "Activate"}
+                                            {u.is_active ? "Deactivate" : "Activate"}
                                         </Button>
 
                                         {/* DELETE BUTTON ADDED */}
-                                        <button onClick={() => handleDelete(u.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all" title="Delete Staff">
+                                        <button onClick={() => handleDelete(u.id)}
+                                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                                                title="Delete Staff">
                                             <i className="ph ph-trash text-lg"></i>
                                         </button>
                                     </td>
@@ -1224,56 +1311,55 @@
         );
     };
 
-    const CustomerManager = () => {
+       const CustomerManager = () => {
         const [customers, setCustomers] = useState([]);
         const [search, setSearch] = useState("");
         const [showModal, setShowModal] = useState(false);
-        useEffect(() => {
-            loadCustomers();
-        }, [search]);
+
+        useEffect(() => { loadCustomers(); }, [search]);
         const loadCustomers = () => {
             const query = search ? `?search=${search}` : '';
             api.get(`customers/${query}`).then(setCustomers);
         };
 
-        // --- NEW DELETE FUNCTION ---
         const handleDelete = async (id) => {
-            if (!confirm("Delete customer? This is only allowed if they have no transaction history.")) return;
-            try {
-                await api.delete(`customers/${id}/`);
-                notify("Customer Deleted");
-                loadCustomers();
-            } catch (e) {
-                notify(e.message, 'error');
-            }
+            if(!confirm("Delete customer? Only possible if no history exists.")) return;
+            try { await api.delete(`customers/${id}/`); notify("Customer Deleted"); loadCustomers(); }
+            catch (e) { notify(e.message, 'error'); }
         };
 
         return (
             <div className="h-full flex flex-col gap-6 animate-fade-in">
-                {showModal && <AddCustomerModal onClose={() => setShowModal(false)} onSuccess={() => {
-                    setShowModal(false);
-                    loadCustomers();
-                }}/>}
-                <div className="flex justify-between items-center"><h1
-                    className="text-2xl font-bold text-slate-800">Customers</h1>
-                    <div className="flex gap-2">
-                        <div className="relative"><i
-                            className="ph ph-magnifying-glass absolute left-3 top-3 text-slate-400"></i><input
-                            placeholder="Search customers..."
-                            className="pl-10 pr-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-brand-500 w-64 transition-all"
-                            value={search} onChange={e => setSearch(e.target.value)}/></div>
+                {showModal && <AddCustomerModal onClose={() => setShowModal(false)} onSuccess={() => { setShowModal(false); loadCustomers(); }}/>}
+
+                {/* Responsive Header: Stacks on mobile, Row on desktop */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <h1 className="text-2xl font-bold text-slate-800">Customers</h1>
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                        <div className="relative flex-grow md:flex-grow-0">
+                            <i className="ph ph-magnifying-glass absolute left-3 top-3 text-slate-400"></i>
+                            <input
+                                placeholder="Search customers..."
+                                className="pl-10 pr-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-brand-500 w-full md:w-64 transition-all"
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                            />
+                        </div>
                         <Button onClick={() => setShowModal(true)}><i className="ph ph-user-plus"></i> Add New</Button>
                     </div>
                 </div>
+
                 <Card className="flex-grow p-0 overflow-hidden flex flex-col border-0 shadow-md">
-                    <div className="overflow-auto scroller">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500">
+                    <div className="overflow-auto scroller h-full">
+                        {/* Added min-w-[600px] to force horizontal scroll on mobile instead of squishing */}
+                        <table className="w-full text-left text-sm min-w-[600px]">
+                            <thead className="bg-slate-50 font-bold border-b sticky top-0 text-slate-500 z-10">
                             <tr>
                                 <th className="p-4">Name</th>
                                 <th className="p-4">Phone</th>
                                 <th className="p-4">Balance</th>
-                                <th className="p-4">Joined</th>
+                                {/* Hide 'Joined' on mobile to save space */}
+                                <th className="p-4 hidden md:table-cell">Joined</th>
                                 <th className="p-4"></th>
                             </tr>
                             </thead>
@@ -1282,11 +1368,9 @@
                                     <td className="p-4 font-bold text-slate-700">{c.name}</td>
                                     <td className="p-4 text-slate-500">{c.phone}</td>
                                     <td className={`p-4 font-mono font-bold ${c.wallet_balance < 0 ? 'text-red-500' : 'text-emerald-600'}`}>{formatCurrency(c.wallet_balance)}</td>
-                                    <td className="p-4 text-slate-400">{formatDate(c.created_at)}</td>
+                                    <td className="p-4 text-slate-400 hidden md:table-cell">{formatDate(c.created_at)}</td>
                                     <td className="p-4 text-right">
-                                        {/* DELETE BUTTON ADDED */}
-                                        <button onClick={() => handleDelete(c.id)}
-                                                className="p-2 text-slate-400 hover:text-red-600 transition-colors">
+                                        <button onClick={() => handleDelete(c.id)} className="p-2 text-slate-400 hover:text-red-600 transition-colors">
                                             <i className="ph ph-trash text-lg"></i>
                                         </button>
                                     </td>
@@ -1355,7 +1439,7 @@
     };
 
     // --- UPDATED: POS TERMINAL (Responsive) ---
-    const PosTerminal = () => {
+const PosTerminal = () => {
         const [input, setInput] = useState("");
         const [scanQty, setScanQty] = useState(1);
         const [cart, setCart] = useState(() => {
@@ -1387,7 +1471,7 @@
         const checkout = async (method) => {
             if (!cart.length) return;
             if (method === 'debt' && !selectedCustomer) return notify("Select a customer for Debt payment", 'error');
-            if (method === 'none' && !confirm("Save as Quote? No payment will be recorded.")) return;
+            if (method === 'none' && !confirm("Create an Estimate? Inventory will NOT be deducted.")) return;
             setLoading(true);
             try {
                 const payload = {
@@ -1398,7 +1482,7 @@
                 };
                 const res = await api.post('purchase/', payload);
                 if (method === 'none') {
-                    notify("Quote Saved Successfully!");
+                    notify("Estimate Created Successfully!");
                 } else {
                     notify(`Order #${res.order_id} Paid: ${formatCurrency(res.total)}`);
                     const printUrl = `/print/receipt/${res.order_id}/`;
@@ -1469,14 +1553,18 @@
                             <div className="text-4xl font-mono font-bold mt-1 tracking-tight text-slate-800">{formatCurrency(total)}</div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 mt-6">
-                            <Button onClick={() => checkout('cash')} disabled={!cart.length || loading} className="col-span-2 py-4 text-lg bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">CASH</Button>
-                            <Button onClick={() => checkout('card')} disabled={!cart.length || loading} className="py-3 bg-blue-600 hover:bg-blue-500">CARD</Button>
-                            <Button onClick={() => checkout('transfer')} disabled={!cart.length || loading} className="py-3 bg-purple-600 hover:bg-purple-500">TRANSFER</Button>
-                            {selectedCustomer && <Button onClick={() => checkout('debt')} disabled={!cart.length || loading} className="col-span-2 py-3 bg-slate-700 hover:bg-slate-600 border border-slate-600">PAY LATER (DEBT)</Button>}
+                            <Button onClick={() => checkout('cash')} disabled={!cart.length || loading} className="col-span-1 py-4 text-lg bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-900/50">CASH</Button>
+                            <Button onClick={() => checkout('card')} disabled={!cart.length || loading} className="col-span-1 py-3 bg-blue-600 hover:bg-blue-500">CARD</Button>
 
-                            {/* UPDATED BUTTON: Vibrant Indigo style for visibility */}
-                            <Button onClick={() => checkout('none')} disabled={!cart.length || loading} className="col-span-2 py-3 bg-indigo-600 text-white hover:bg-indigo-500 shadow-md font-bold tracking-wide mt-2">
-                                <i className="ph ph-file-text mr-2"></i> Save as Quote
+                            {/* Logic: If Customer is selected, Transfer shares row with Debt. If not, Transfer is full width. */}
+                            <Button onClick={() => checkout('transfer')} disabled={!cart.length || loading} className={`${selectedCustomer ? 'col-span-1' : 'col-span-2'} py-3 bg-purple-600 hover:bg-purple-500`}>TRANSFER</Button>
+
+                            {selectedCustomer && (
+                                <Button onClick={() => checkout('debt')} disabled={!cart.length || loading} className="col-span-1 py-3 bg-slate-700 hover:bg-slate-600 border border-slate-600">PAY LATER</Button>
+                            )}
+
+                            <Button onClick={() => checkout('none')} disabled={!cart.length || loading} className="col-span-2 py-3 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200 font-bold tracking-wide mt-2">
+                                <i className="ph ph-file-text mr-2"></i> Create Estimate
                             </Button>
                         </div>
                     </Card>
@@ -1650,6 +1738,146 @@
         );
     };
 
+const SalesLedger = () => {
+        const [data, setData] = useState({ total_revenue: 0, breakdown: [], orders: [] });
+        const [dateRange, setDateRange] = useState({
+            start: new Date().toISOString().split('T')[0],
+            end: new Date().toISOString().split('T')[0]
+        });
+        const [loading, setLoading] = useState(false);
+
+        useEffect(() => {
+            loadReport();
+        }, []);
+
+        const loadReport = async () => {
+            setLoading(true);
+            try {
+                const res = await api.get(`reports/sales/?start=${dateRange.start}&end=${dateRange.end}`);
+                setData(res);
+            } catch (e) {
+                notify(e.message, 'error');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        // Calculations for KPIs
+        const revenue = parseFloat(data.total_revenue || 0);
+        const count = data.orders.length;
+        const avgOrder = count > 0 ? revenue / count : 0;
+
+        return (
+            <div className="h-full flex flex-col gap-6 animate-fade-in">
+                {/* Header & Filters */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div>
+                        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <i className="ph ph-receipt text-brand-600"></i> Sales Ledger
+                        </h1>
+                        <p className="text-xs text-slate-500">Financial records from {dateRange.start} to {dateRange.end}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border overflow-x-auto max-w-full">
+                        <input type="date" className="p-2 text-sm bg-transparent outline-none font-medium text-slate-600"
+                               value={dateRange.start} onChange={e => setDateRange({...dateRange, start: e.target.value})} />
+                        <span className="text-slate-400">to</span>
+                        <input type="date" className="p-2 text-sm bg-transparent outline-none font-medium text-slate-600"
+                               value={dateRange.end} onChange={e => setDateRange({...dateRange, end: e.target.value})} />
+                        <Button size="sm" onClick={loadReport} disabled={loading} className="px-4 shrink-0 shadow-none">
+                            {loading ? <i className="ph ph-spinner animate-spin"></i> : "Filter"}
+                        </Button>
+                    </div>
+                </div>
+
+                {/* KPI Summary Strip */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card className="flex items-center justify-between p-5 border-l-4 border-l-emerald-500 shadow-sm">
+                        <div>
+                            <div className="text-xs font-bold uppercase text-slate-400 tracking-wider">Total Revenue</div>
+                            <div className="text-2xl font-mono font-bold text-slate-800 mt-1">{formatCurrency(revenue)}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+                            <i className="ph ph-currency-dollar text-xl"></i>
+                        </div>
+                    </Card>
+
+                    <Card className="flex items-center justify-between p-5 border-l-4 border-l-blue-500 shadow-sm">
+                        <div>
+                            <div className="text-xs font-bold uppercase text-slate-400 tracking-wider">Transactions</div>
+                            <div className="text-2xl font-bold text-slate-800 mt-1">{count}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                            <i className="ph ph-shopping-cart text-xl"></i>
+                        </div>
+                    </Card>
+
+                    <Card className="flex items-center justify-between p-5 border-l-4 border-l-purple-500 shadow-sm">
+                        <div>
+                            <div className="text-xs font-bold uppercase text-slate-400 tracking-wider">Avg. Order Value</div>
+                            <div className="text-2xl font-mono font-bold text-slate-800 mt-1">{formatCurrency(avgOrder)}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600">
+                            <i className="ph ph-chart-line-up text-xl"></i>
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Main Table */}
+                <Card className="flex-grow p-0 overflow-hidden flex flex-col border border-slate-200 shadow-md">
+                    <div className="overflow-auto scroller h-full bg-white">
+                        <table className="w-full text-left text-sm min-w-[700px]">
+                            <thead className="bg-slate-50 font-bold border-b text-slate-500 sticky top-0 z-10 text-xs uppercase tracking-wide">
+                                <tr>
+                                    <th className="p-4">Date & Time</th>
+                                    <th className="p-4">Order ID</th>
+                                    <th className="p-4">Customer</th>
+                                    <th className="p-4">Cashier</th>
+                                    <th className="p-4">Payment</th>
+                                    <th className="p-4 text-right">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {data.orders.length === 0 ? (
+                                    <tr><td colSpan="6" className="p-12 text-center text-slate-400 italic">No records found for this period.</td></tr>
+                                ) : (
+                                    data.orders.map(o => (
+                                        <tr key={o.id} className="hover:bg-slate-50 transition-colors group">
+                                            <td className="p-4 text-slate-500 whitespace-nowrap">
+                                                <div className="font-medium text-slate-700">{new Date(o.created_at).toLocaleDateString()}</div>
+                                                <div className="text-xs">{new Date(o.created_at).toLocaleTimeString()}</div>
+                                            </td>
+                                            <td className="p-4 font-mono text-xs font-bold text-slate-600 group-hover:text-brand-600 transition-colors">#{o.id}</td>
+                                            <td className="p-4">
+                                                {o.customer_name ? (
+                                                    <span className="font-medium text-slate-700">{o.customer_name}</span>
+                                                ) : (
+                                                    <span className="text-slate-400 italic text-xs">Walk-in</span>
+                                                )}
+                                            </td>
+                                            <td className="p-4 text-slate-600 text-xs">{o.cashier_name}</td>
+                                            <td className="p-4">
+                                                <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded border ${
+                                                    o.payment_method === 'cash' ? 'bg-green-50 text-green-700 border-green-100' :
+                                                    o.payment_method === 'transfer' ? 'bg-purple-50 text-purple-700 border-purple-100' :
+                                                    'bg-blue-50 text-blue-700 border-blue-100'
+                                                }`}>
+                                                    {o.payment_method}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-right font-mono font-bold text-slate-800">{formatCurrency(parseFloat(o.total_amount))}</td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            </div>
+        );
+    };
+
+
     const StocktakeManager = () => {
         const [sessions, setSessions] = useState([]);
         const [activeSession, setActiveSession] = useState(null);
@@ -1676,7 +1904,7 @@
         // --- NEW DELETE FUNCTION ---
         const deleteSession = async (id, e) => {
             e.stopPropagation(); // Stop row click
-            if(!confirm("Discard this stocktake session?")) return;
+            if (!confirm("Discard this stocktake session?")) return;
             try {
                 await api.delete(`stocktake/${id}/`);
                 notify("Session Discarded");
@@ -1695,7 +1923,9 @@
             const [inputCode, setInputCode] = useState("");
             const [showCamera, setShowCamera] = useState(false);
             const inputRef = useRef(null);
-            useEffect(() => { inputRef.current?.focus(); }, []);
+            useEffect(() => {
+                inputRef.current?.focus();
+            }, []);
 
             const handleScan = async (code) => {
                 const item = items.find(i => i.barcode === code);
@@ -1715,8 +1945,11 @@
 
                 const updatedItems = items.map(i => i.id === item.id ? {...i, counted_quantity: qty} : i);
                 setItems(updatedItems);
-                try { await api.post(`stocktake/${session.id}/`, {barcode: item.barcode, quantity: qty}); }
-                catch (e) { notify("Failed to save count", 'error'); }
+                try {
+                    await api.post(`stocktake/${session.id}/`, {barcode: item.barcode, quantity: qty});
+                } catch (e) {
+                    notify("Failed to save count", 'error');
+                }
             };
 
             const finalize = async () => {
@@ -1725,7 +1958,9 @@
                     await api.put(`stocktake/${session.id}/`, {});
                     notify("Stocktake Finalized!");
                     onClose();
-                } catch (e) { notify(e.message, 'error'); }
+                } catch (e) {
+                    notify(e.message, 'error');
+                }
             };
 
             const filteredItems = items.filter(i => i.product_name.toLowerCase().includes(filter.toLowerCase()) || i.barcode.includes(filter));
@@ -1733,37 +1968,63 @@
 
             return (
                 <div className="fixed inset-0 bg-white z-50 flex flex-col animate-fade-in">
-                    {showCamera && <CameraModal onScan={(c) => { setShowCamera(false); handleScan(c); notify("Scanned!"); }} onClose={() => setShowCamera(false)}/>}
+                    {showCamera && <CameraModal onScan={(c) => {
+                        setShowCamera(false);
+                        handleScan(c);
+                        notify("Scanned!");
+                    }} onClose={() => setShowCamera(false)}/>}
                     <div className="bg-slate-900 text-white p-4 flex justify-between items-center shadow-lg">
-                        <div><h2 className="text-xl font-bold">Stocktake #{session.id}</h2><span className="text-slate-400 text-sm">Started: {formatDate(session.created_at)}</span></div>
-                        <div className="flex gap-3"><Button variant="ghost" className="text-white hover:bg-white/10" onClick={onClose}>Close</Button>{session.status === 'in_progress' && <Button variant="success" onClick={finalize}>Finalize & Adjust Stock</Button>}</div>
+                        <div><h2 className="text-xl font-bold">Stocktake #{session.id}</h2><span
+                            className="text-slate-400 text-sm">Started: {formatDate(session.created_at)}</span></div>
+                        <div className="flex gap-3"><Button variant="ghost" className="text-white hover:bg-white/10"
+                                                            onClick={onClose}>Close</Button>{session.status === 'in_progress' &&
+                            <Button variant="success" onClick={finalize}>Finalize & Adjust Stock</Button>}</div>
                     </div>
                     <div className="flex-grow flex flex-col p-6 gap-4 bg-slate-50">
                         {session.status === 'in_progress' && (
-                        <div className="bg-white p-4 rounded-xl shadow-sm border flex gap-4 items-center">
-                            <i className="ph ph-barcode text-2xl text-slate-400"></i>
-                            <input ref={inputRef} value={inputCode} onChange={e => setInputCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleScan(inputCode)} className="flex-grow text-lg outline-none font-mono" placeholder="Scan item to count..." autoFocus/>
-                            <Button variant="dark" onClick={() => setShowCamera(true)}><i className="ph ph-camera"></i> Scan</Button>
-                        </div>)}
+                            <div className="bg-white p-4 rounded-xl shadow-sm border flex gap-4 items-center">
+                                <i className="ph ph-barcode text-2xl text-slate-400"></i>
+                                <input ref={inputRef} value={inputCode} onChange={e => setInputCode(e.target.value)}
+                                       onKeyDown={e => e.key === 'Enter' && handleScan(inputCode)}
+                                       className="flex-grow text-lg outline-none font-mono"
+                                       placeholder="Scan item to count..." autoFocus/>
+                                <Button variant="dark" onClick={() => setShowCamera(true)}><i
+                                    className="ph ph-camera"></i> Scan</Button>
+                            </div>)}
                         <div className="flex justify-between items-center">
-                            <input placeholder="Filter items..." className="p-2 rounded border" value={filter} onChange={e => setFilter(e.target.value)}/>
-                            <div className={`font-bold px-3 py-1 rounded ${totalVar === 0 ? 'bg-gray-200 text-gray-600' : totalVar < 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>Net Variance: {totalVar > 0 ? '+' : ''}{totalVar}</div>
+                            <input placeholder="Filter items..." className="p-2 rounded border" value={filter}
+                                   onChange={e => setFilter(e.target.value)}/>
+                            <div
+                                className={`font-bold px-3 py-1 rounded ${totalVar === 0 ? 'bg-gray-200 text-gray-600' : totalVar < 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>Net
+                                Variance: {totalVar > 0 ? '+' : ''}{totalVar}</div>
                         </div>
                         <div className="flex-grow overflow-auto bg-white rounded-xl border shadow-sm">
                             <table className="w-full text-left text-sm">
                                 <thead className="bg-slate-100 font-bold sticky top-0">
-                                <tr><th className="p-3">Product</th><th className="p-3 text-right">Expected</th><th className="p-3 text-center w-32">Counted</th><th className="p-3 text-right">Variance</th></tr>
+                                <tr>
+                                    <th className="p-3">Product</th>
+                                    <th className="p-3 text-right">Expected</th>
+                                    <th className="p-3 text-center w-32">Counted</th>
+                                    <th className="p-3 text-right">Variance</th>
+                                </tr>
                                 </thead>
                                 <tbody className="divide-y">{filteredItems.map(i => {
                                     const variance = i.counted_quantity - i.expected_quantity;
                                     return (<tr key={i.id} className="hover:bg-slate-50">
-                                        <td className="p-3 font-medium">{i.product_name} <span className="text-xs text-slate-400 block">{i.barcode}</span></td>
+                                        <td className="p-3 font-medium">{i.product_name} <span
+                                            className="text-xs text-slate-400 block">{i.barcode}</span></td>
                                         <td className="p-3 text-right text-slate-500">{i.expected_quantity}</td>
                                         <td className="p-3 text-center">{session.status === 'in_progress' ? (
                                             <div className="flex items-center justify-center gap-1">
-                                                <button onClick={() => updateCount(i, i.counted_quantity - 1)} className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">-</button>
-                                                <input className="w-12 text-center font-bold border rounded p-1" value={i.counted_quantity} onChange={e => updateCount(i, e.target.value)}/>
-                                                <button onClick={() => updateCount(i, i.counted_quantity + 1)} className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">+</button>
+                                                <button onClick={() => updateCount(i, i.counted_quantity - 1)}
+                                                        className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">-
+                                                </button>
+                                                <input className="w-12 text-center font-bold border rounded p-1"
+                                                       value={i.counted_quantity}
+                                                       onChange={e => updateCount(i, e.target.value)}/>
+                                                <button onClick={() => updateCount(i, i.counted_quantity + 1)}
+                                                        className="w-6 h-6 bg-slate-100 rounded hover:bg-slate-200">+
+                                                </button>
                                             </div>) : <span className="font-bold">{i.counted_quantity}</span>}</td>
                                         <td className={`p-3 text-right font-bold ${variance === 0 ? 'text-slate-300' : variance < 0 ? 'text-red-500' : 'text-green-500'}`}>{variance > 0 ? '+' : ''}{variance}</td>
                                     </tr>)
@@ -1777,7 +2038,10 @@
 
         return (
             <div className="h-full flex flex-col gap-6 animate-fade-in">
-                {activeSession && <SessionDetail session={activeSession} onClose={() => { setActiveSession(null); loadSessions(); }}/>}
+                {activeSession && <SessionDetail session={activeSession} onClose={() => {
+                    setActiveSession(null);
+                    loadSessions();
+                }}/>}
                 <div className="flex justify-between items-center">
                     <h1 className="text-2xl font-bold text-slate-800">Stocktake</h1>
                     <Button onClick={startSession}><i className="ph ph-plus"></i> New Session</Button>
@@ -1796,7 +2060,8 @@
                             </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">{sessions.map(s => (
-                                <tr key={s.id} onClick={() => api.get(`stocktake/${s.id}/`).then(setActiveSession)} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                                <tr key={s.id} onClick={() => api.get(`stocktake/${s.id}/`).then(setActiveSession)}
+                                    className="hover:bg-slate-50 cursor-pointer transition-colors">
                                     <td className="p-4 font-mono font-bold text-brand-600">#{s.id}</td>
                                     <td className="p-4 text-slate-500">{formatDate(s.created_at)}</td>
                                     <td className="p-4"><StatusBadge status={s.status}/></td>
@@ -1805,7 +2070,9 @@
                                     <td className="p-4 text-right">
                                         {/* DELETE BUTTON: Only shows for In Progress sessions */}
                                         {s.status === 'in_progress' && (
-                                            <button onClick={(e) => deleteSession(s.id, e)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all" title="Discard Session">
+                                            <button onClick={(e) => deleteSession(s.id, e)}
+                                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                                                    title="Discard Session">
                                                 <i className="ph ph-trash text-lg"></i>
                                             </button>
                                         )}
@@ -1819,13 +2086,12 @@
         );
     };
 
-    // --- UPDATED: APP COMPONENT (Responsive Layout) ---
+    // --- UPDATED MAIN APP COMPONENT ---
     const App = () => {
         const [view, setView] = useState('dashboard');
         const [user, setUser] = useState(null);
         const [storeConfig, setStoreConfig] = useState({store_name: 'Inventro'});
         const [modalParams, setModalParams] = useState(false);
-        // NEW: Mobile Menu State
         const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
         useEffect(() => {
@@ -1839,7 +2105,7 @@
             setView(v);
             setModalParams(params);
             localStorage.setItem('view', v);
-            setMobileMenuOpen(false); // Close menu on mobile when clicked
+            setMobileMenuOpen(false);
         };
 
         const NavItem = ({id, icon, label}) => (<button onClick={() => nav(id)}
@@ -1866,14 +2132,13 @@
                         className="ph ph-list"></i></button>
                 </div>
 
-                {/* Sidebar (Drawer on Mobile, Static on Desktop) */}
+                {/* Sidebar Overlay */}
                 <div
                     className={`fixed inset-0 z-50 bg-black/50 transition-opacity md:hidden ${mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                     onClick={() => setMobileMenuOpen(false)}></div>
 
                 <aside
                     className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 flex flex-col p-6 transition-transform duration-300 md:relative md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                    {/* Mobile Close Button */}
                     <button onClick={() => setMobileMenuOpen(false)}
                             className="md:hidden absolute top-4 right-4 text-slate-400 text-2xl"><i
                         className="ph ph-x"></i></button>
@@ -1901,6 +2166,8 @@
                                     className="text-xs font-bold uppercase text-slate-600 px-4 tracking-wider">Management</span>
                                 </div>
                                 <NavItem id="dashboard" icon="ph-chart-pie-slice" label="Overview"/>
+                                <NavItem id="sales" icon="ph-currency-dollar"
+                                         label="Sales Ledger"/> {/* Added Sales Link */}
                                 <NavItem id="inventory" icon="ph-package" label="Inventory"/>
                                 <NavItem id="procurement" icon="ph-truck" label="Procurement"/>
                                 <NavItem id="stocktake" icon="ph-clipboard-text" label="Stocktake"/>
@@ -1923,6 +2190,7 @@
                 <main className="flex-grow p-4 md:p-8 overflow-hidden h-full relative pt-20 md:pt-8">
                     <ErrorBoundary>
                         {user.is_manager && view === 'dashboard' && <Dashboard onNavigate={nav}/>}
+                        {user.is_manager && view === 'sales' && <SalesLedger/>} {/* Added Sales View */}
                         {user.is_manager && view === 'inventory' && <InventoryManager openModalOnLoad={modalParams}/>}
                         {user.is_manager && view === 'procurement' && <Procurement openCreateOnLoad={modalParams}/>}
                         {user.is_manager && view === 'audit' && <AuditLogs/>}
