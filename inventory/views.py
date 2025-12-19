@@ -15,6 +15,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -278,14 +279,32 @@ class AuditLogView(APIView):
     permission_classes = [IsAuthenticated, IsManager]
 
     def get(self, request):
+        # Base Query
         logs = InventoryLog.objects.select_related('variant__product', 'user').order_by('-created_at')
 
-        # NEW: Filter by Product Variant ID
-        variant_id = request.query_params.get('variant_id')
-        if variant_id:
-            logs = logs.filter(variant_id=variant_id)
+        # 1. Search Filter
+        search = request.query_params.get('search')
+        if search:
+            logs = logs.filter(
+                Q(variant__product__name__icontains=search) |
+                Q(variant__sku__icontains=search) |
+                Q(user__username__icontains=search) |
+                Q(action__icontains=search) |
+                Q(note__icontains=search)
+            )
 
-        return Response(InventoryLogSerializer(logs[:100], many=True).data)
+        # 2. Date Filter
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        if start_date and end_date:
+            logs = logs.filter(created_at__date__range=[start_date, end_date])
+
+        # 3. Pagination Support
+        paginator = PageNumberPagination()
+        paginator.page_size = 20 # Backend chunks
+        result_page = paginator.paginate_queryset(logs, request)
+        serializer = InventoryLogSerializer(result_page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 
 class BarcodeGeneratorView(APIView):

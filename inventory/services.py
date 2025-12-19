@@ -323,9 +323,13 @@ def process_refund(user, order_id, refund_items):
             is_damaged= item.get('is_damaged', False) #-- optional, that is why we use get(), if key exists, return the value, if not, return False
 
             try:
-                order_item = OrderItem.objects.get(variant__barcode=barcode) #--retrieve the order item
-            except:
-                raise ValidationError(f"Item {barcode} not in order.")
+                #-- We filter by order=order AND barcode to find the specific item in this order
+                order_item = OrderItem.objects.get(order=order, variant__barcode=barcode)
+            except OrderItem.DoesNotExist:
+                raise ValidationError(f"Item {barcode} not in this order.")
+            except OrderItem.MultipleObjectsReturned:
+                #--If duplicate items exist in one order, assume the first one
+                order_item = OrderItem.objects.filter(order=order, variant__barcode=barcode).first()
             
             returnable = order_item.quantity - order_item.refunded_quantity #-- we calculate the qty the user can still return to mitigate fraud
             if qty > returnable:#-- if what the user wants to return is more than the qty he can return
@@ -449,10 +453,10 @@ def start_stocktake(user, note=""):
         session = StocktakeSession.objects.create(created_by=user, note=note)
         
         # 2. Snapshot every product
-        variants = ProductVariant.objects.filter(is_active=True) # Assuming you added is_active to Variant or Product
-        # If is_active is on Product, use variant.product.is_active=True
+        all_variants = ProductVariant.objects.filter(is_active=True) # Assuming you added is_active to Variant or Product
+
         # For now, let's grab all:
-        all_variants = ProductVariant.objects.all()
+        # all_variants = ProductVariant.objects.all()
         
         items = []
         for v in all_variants:
