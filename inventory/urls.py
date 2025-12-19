@@ -10,14 +10,18 @@ from .views import (ScanItemView, PurchaseView, InventoryAdjustmentView,
                     ExportSalesView, ExportInventoryView, DatabaseBackupView, CustomerView,
                     receipt_view, StocktakeListView, StocktakeDetailView, StoreSettingsView, NotificationView,
                     OrderDetailView, CustomerDetailView, SupplierDetailView, ProductDetailView, StaffDetailView,
-                    SalesReportView
+                    SalesReportView, setup_view, ChangePasswordView
                     )
 
 urlpatterns = [
     # -- UI
     path('', store_os_view, name='store_os'),
+    path('setup/', setup_view, name='setup'),  # <-- New Setup Path
     path('login/', auth_views.LoginView.as_view(template_name='inventory/login.html'), name='login'),
     path('logout/', logout_view, name='logout'),
+
+    # --security
+    path('api/change-password/', ChangePasswordView.as_view(), name='change-password'),
 
     # -- User & Staff
     path('api/me/', UserMetaView.as_view(), name='user-meta'),

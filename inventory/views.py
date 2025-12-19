@@ -1,10 +1,12 @@
 import io
 import traceback
 import uuid
+
+from django.contrib.auth.hashers import check_password
 from django.utils import timezone
 from os import name
 
-from django.contrib.auth import logout
+from django.contrib.auth import logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
@@ -717,6 +719,57 @@ class SalesReportView(APIView):
             "breakdown": method_breakdown,
             "orders": OrderSerializer(orders, many=True).data
         })
+
+
+def setup_view(request):
+    """
+    Redirects here if no users exist. Allows creating the Owner account.
+    """
+    if User.objects.exists():
+        return redirect('login')  # Security: Block access if owner exists
+
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        store_name = request.POST.get('store_name')
+
+        if not username or not password:
+            return render(request, 'inventory/setup.html', {'error': 'All fields required'})
+
+        # Create Superuser
+        User.objects.create_superuser(username=username, password=password)
+
+        # Create Default Settings
+        settings, _ = StoreSettings.objects.get_or_create(id=1)
+        if store_name:
+            settings.store_name = store_name
+            settings.save()
+
+        return redirect('login')
+
+    return render(request, 'inventory/setup.html')
+
+
+class ChangePasswordView(APIView):
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+
+        user = request.user
+
+        if not check_password(old_password, user.password):
+            return Response({"error": "Current password is incorrect"}, status=400)
+
+        user.set_password(new_password)
+        user.save()
+
+        # Keep user logged in after password change
+        update_session_auth_hash(request, user)
+
+        return Response({"message": "Password updated successfully"})
 
 @login_required(login_url='login')
 def store_os_view(request):

@@ -1980,118 +1980,79 @@
     // --- COMPONENT: SETTINGS MANAGER ---
    const SettingsManager = ({ onUpdate }) => {
         const [settings, setSettings] = useState({store_name: '', address: '', phone: '', email: ''});
+        const [passForm, setPassForm] = useState({old_password: '', new_password: ''});
         const [loading, setLoading] = useState(false);
-        const [fetching, setFetching] = useState(true);
+        const [passLoading, setPassLoading] = useState(false);
 
         useEffect(() => {
-            api.get('settings/').then(data => {
-                setSettings(data);
-                setFetching(false);
-            }).catch(() => setFetching(false));
+            api.get('settings/').then(setSettings);
         }, []);
 
-        const save = async (e) => {
+        const saveSettings = async (e) => {
             e.preventDefault();
             setLoading(true);
             try {
                 await api.post('settings/', settings);
-                notify("Configuration Updated Successfully!");
+                notify("Configuration Updated");
                 if (onUpdate) onUpdate(settings);
             } catch (e) { notify(e.message, 'error'); }
             finally { setLoading(false); }
         };
 
-        if(fetching) return <div className="h-full flex items-center justify-center text-slate-400"><i className="ph ph-spinner animate-spin text-2xl"></i></div>;
+        const changePassword = async (e) => {
+            e.preventDefault();
+            if(!passForm.old_password || !passForm.new_password) return notify("Fill all password fields", 'error');
+            setPassLoading(true);
+            try {
+                await api.post('change-password/', passForm);
+                notify("Password Changed Successfully");
+                setPassForm({old_password: '', new_password: ''});
+            } catch (e) { notify(e.message, 'error'); }
+            finally { setPassLoading(false); }
+        };
 
         return (
-            <div className="h-full flex flex-col gap-6 animate-fade-in max-w-4xl mx-auto w-full">
+            <div className="h-full flex flex-col gap-6 animate-fade-in max-w-5xl mx-auto w-full overflow-y-auto scroller p-2">
                 <div className="text-center md:text-left">
                     <h1 className="text-2xl font-bold text-slate-800">Settings</h1>
-                    <p className="text-slate-500">Manage your store identity and receipts</p>
+                    <p className="text-slate-500">Manage store identity & security</p>
                 </div>
 
-                <form onSubmit={save} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Store Identity */}
-                    <Card className="flex flex-col gap-4 border-t-4 border-t-brand-500 shadow-md">
-                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3 mb-1">
-                            <div className="p-2 bg-brand-50 text-brand-600 rounded-lg"><i className="ph ph-storefront text-xl"></i></div>
-                            <div>
-                                <h3 className="font-bold text-slate-700">Store Identity</h3>
-                                <p className="text-xs text-slate-400">Name and branding</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* General Settings */}
+                    <form onSubmit={saveSettings} className="space-y-6">
+                        <Card className="flex flex-col gap-4 border-t-4 border-t-brand-500 shadow-md">
+                            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                                <div className="p-2 bg-brand-50 text-brand-600 rounded-lg"><i className="ph ph-storefront text-xl"></i></div>
+                                <div><h3 className="font-bold text-slate-700">General</h3><p className="text-xs text-slate-400">Store details</p></div>
                             </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Store Name</label>
-                                <div className="relative">
-                                    <i className="ph ph-tag absolute left-3 top-3 text-slate-400"></i>
-                                    <input
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50 transition-all font-medium text-slate-700"
-                                        value={settings.store_name}
-                                        onChange={e => setSettings({...settings, store_name: e.target.value})}
-                                        required
-                                    />
+                            <div className="space-y-4">
+                                <Input label="Store Name" value={settings.store_name} onChange={e => setSettings({...settings, store_name: e.target.value})}/>
+                                <Input label="Address" value={settings.address} onChange={e => setSettings({...settings, address: e.target.value})}/>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <Input label="Phone" value={settings.phone} onChange={e => setSettings({...settings, phone: e.target.value})}/>
+                                    <Input label="Email" value={settings.email} onChange={e => setSettings({...settings, email: e.target.value})}/>
                                 </div>
                             </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Address</label>
-                                <div className="relative">
-                                    <i className="ph ph-map-pin absolute left-3 top-3 text-slate-400"></i>
-                                    <textarea
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50 transition-all font-medium text-slate-700 min-h-[100px] resize-none"
-                                        value={settings.address}
-                                        onChange={e => setSettings({...settings, address: e.target.value})}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
+                            <div className="pt-2"><Button type="submit" disabled={loading} className="w-full bg-slate-800">{loading ? "Saving..." : "Update Details"}</Button></div>
+                        </Card>
+                    </form>
 
-                    {/* Contact Info */}
-                    <Card className="flex flex-col gap-4 border-t-4 border-t-emerald-500 shadow-md h-fit">
-                        <div className="flex items-center gap-3 border-b border-slate-100 pb-3 mb-1">
-                            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><i className="ph ph-address-book text-xl"></i></div>
-                            <div>
-                                <h3 className="font-bold text-slate-700">Contact Details</h3>
-                                <p className="text-xs text-slate-400">For receipts and invoices</p>
+                    {/* Security Settings */}
+                    <form onSubmit={changePassword} className="space-y-6">
+                        <Card className="flex flex-col gap-4 border-t-4 border-t-red-500 shadow-md">
+                            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                                <div className="p-2 bg-red-50 text-red-600 rounded-lg"><i className="ph ph-lock-key text-xl"></i></div>
+                                <div><h3 className="font-bold text-slate-700">Security</h3><p className="text-xs text-slate-400">Change your password</p></div>
                             </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Phone Number</label>
-                                <div className="relative">
-                                    <i className="ph ph-phone absolute left-3 top-3 text-slate-400"></i>
-                                    <input
-                                        type="tel"
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all font-medium text-slate-700"
-                                        value={settings.phone}
-                                        onChange={e => setSettings({...settings, phone: e.target.value})}
-                                    />
-                                </div>
+                            <div className="space-y-4">
+                                <Input label="Current Password" type="password" value={passForm.old_password} onChange={e => setPassForm({...passForm, old_password: e.target.value})}/>
+                                <Input label="New Password" type="password" value={passForm.new_password} onChange={e => setPassForm({...passForm, new_password: e.target.value})}/>
                             </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Email Address</label>
-                                <div className="relative">
-                                    <i className="ph ph-envelope absolute left-3 top-3 text-slate-400"></i>
-                                    <input
-                                        type="email"
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-50 transition-all font-medium text-slate-700"
-                                        value={settings.email}
-                                        onChange={e => setSettings({...settings, email: e.target.value})}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="mt-4 pt-4 border-t border-slate-100">
-                            <Button type="submit" disabled={loading} className="w-full py-3 text-sm bg-slate-800 hover:bg-slate-700 shadow-lg">
-                                {loading ? <><i className="ph ph-spinner animate-spin"></i> Saving...</> : "Save Changes"}
-                            </Button>
-                        </div>
-                    </Card>
-                </form>
+                            <div className="pt-2"><Button variant="danger" type="submit" disabled={passLoading} className="w-full">{passLoading ? "Updating..." : "Change Password"}</Button></div>
+                        </Card>
+                    </form>
+                </div>
             </div>
         );
     };
